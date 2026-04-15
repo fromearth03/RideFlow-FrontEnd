@@ -1,0 +1,148 @@
+import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import type { AuthUser, AuthState, UserRole } from '@/types';
+import { authApi } from '@/services/api';
+
+interface RegisterData {
+  email: string;
+  password: string;
+  role: UserRole;
+}
+
+interface AuthContextType extends AuthState {
+  login: (email: string, password: string) => Promise<void>;
+  register: (data: RegisterData) => Promise<void>;
+  logout: () => void;
+  hasRole: (role: UserRole | UserRole[]) => boolean;
+}
+
+const AuthContext = createContext<AuthContextType | null>(null);
+
+export const useAuth = () => {
+  const ctx = useContext(AuthContext);
+  if (!ctx) throw new Error('useAuth must be used within AuthProvider');
+  return ctx;
+};
+
+function getRoleDashboard(role: UserRole): string {
+  switch (role) {
+    case 'ROLE_ADMIN': return '/admin-dashboard';
+    case 'ROLE_DRIVER': return '/driver-dashboard';
+    case 'ROLE_DISPATCHER': return '/dispatcher-dashboard';
+    case 'ROLE_CUSTOMER':
+    default: return '/user-dashboard';
+  }
+}
+
+function requiresApproval(role: UserRole): boolean {
+  return role === 'ROLE_DRIVER' || role === 'ROLE_DISPATCHER';
+}
+
+function resolveApproval(role: UserRole, approved?: boolean | null): boolean {
+  if (!requiresApproval(role)) return true;
+  return approved === true;
+}
+
+const AuthProviderInner: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const navigate = useNavigate();
+  const [state, setState] = useState<AuthState>({
+    user: null,
+    token: null,
+    isAuthenticated: false,
+    isLoading: true,
+  });
+
+  // Restore session from localStorage
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    const role = localStorage.getItem('role') as UserRole | null;
+    const email = localStorage.getItem('email');
+    const approvedRaw = localStorage.getItem('approved');
+    const approved = approvedRaw === null ? undefined : approvedRaw === 'true';
+    if (token && role && email) {
+      setState({
+        user: { email, role, approved: resolveApproval(role, approved) },
+        token,
+        isAuthenticated: true,
+        isLoading: false,
+      });
+    } else {
+      setState(s => ({ ...s, isLoading: false }));
+    }
+  }, []);
+
+  // Listen for 401 → logout event from api.ts
+  useEffect(() => {
+    const handler = () => {
+      setState({ user: null, token: null, isAuthenticated: false, isLoading: false });
+      navigate('/login', { replace: true });
+    };
+    window.addEventListener('auth:logout', handler);
+    return () => window.removeEventListener('auth:logout', handler);
+  }, [navigate]);
+
+  const persistAuth = (email: string, token: string, role: UserRole, approved: boolean) => {
+    localStorage.setItem('token', token);
+    localStorage.setItem('role', role);
+    localStorage.setItem('email', email);
+    localStorage.setItem('approved', String(approved));
+    setState({ user: { email, role, approved }, token, isAuthenticated: true, isLoading: false });
+  };
+
+  const login = useCallback(async (email: string, password: string) => {
+    const data = await authApi.login(email, password);
+    const approved = resolveApproval(data.role, data.approved);
+    if (requiresApproval(data.role) && !approved) {
+      throw { message: 'You have not been approved. Contact the admin.' };
+    }
+    persistAuth(email, data.token, data.role, approved);
+    navigate(getRoleDashboard(data.role), { replace: true });
+  }, [navigate]);
+
+  const register = useCallback(async ({ email, password, role }: RegisterData) => {
+    let data;
+    switch (role) {
+      case 'ROLE_DRIVER':
+        data = await authApi.registerDriver(email, password);
+        break;
+      case 'ROLE_DISPATCHER':
+        data = await authApi.registerDispatcher(email, password);
+        break;
+      case 'ROLE_ADMIN':
+        data = await authApi.registerAdmin(email, password);
+        break;
+      case 'ROLE_CUSTOMER':
+      default:
+        data = await authApi.registerCustomer(email, password);
+        break;
+    }
+    const approved = resolveApproval(data.role, data.approved);
+    persistAuth(email, data.token, data.role, approved);
+    navigate(getRoleDashboard(data.role), { replace: true });
+  }, [navigate]);
+
+  const logout = useCallback(() => {
+    localStorage.removeItem('token');
+    localStorage.removeItem('role');
+    localStorage.removeItem('email');
+    localStorage.removeItem('approved');
+    setState({ user: null, token: null, isAuthenticated: false, isLoading: false });
+    navigate('/login', { replace: true });
+  }, [navigate]);
+
+  const hasRole = useCallback((role: UserRole | UserRole[]) => {
+    if (!state.user) return false;
+    return Array.isArray(role) ? role.includes(state.user.role) : state.user.role === role;
+  }, [state.user]);
+
+  return (
+    <AuthContext.Provider value={{ ...state, login, register, logout, hasRole }}>
+      {children}
+    </AuthContext.Provider>
+  );
+};
+
+// Wrap with BrowserRouter context (navigate requires it)
+export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  return <AuthProviderInner>{children}</AuthProviderInner>;
+};

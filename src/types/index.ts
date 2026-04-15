@@ -1,0 +1,82 @@
+// Backend role strings as returned by the API
+export type UserRole = 'ROLE_CUSTOMER' | 'ROLE_DRIVER' | 'ROLE_DISPATCHER' | 'ROLE_ADMIN';
+
+// Backend ride status strings (uppercase)
+export type RideStatus = 'PENDING' | 'ASSIGNED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED';
+
+// Auth state stored locally
+export interface AuthUser {
+  email: string;
+  role: UserRole;
+  approved: boolean;
+}
+
+export interface AuthState {
+  user: AuthUser | null;
+  token: string | null;
+  isAuthenticated: boolean;
+  isLoading: boolean;
+}
+
+// Backend DTO shapes
+export interface BackendRide {
+  id: number;
+  pickupLocation: string;
+  dropLocation: string;
+  status: RideStatus;
+  driverId: number | null;
+}
+
+export interface BackendDriver {
+  id: number;
+  email?: string;
+  licenseNumber: string;
+  isAvailable: boolean;
+  approved?: boolean;
+}
+
+export interface BackendDispatcher {
+  id: number;
+  email: string;
+  approved: boolean;
+}
+
+export interface BackendCustomer {
+  id: number;
+  email: string;
+  phoneNumber?: string | null;
+}
+
+export interface BackendUser {
+  id: number;
+  email: string;
+  role: UserRole;
+}
+
+export interface BackendVehicle {
+  id: number;
+  plateNumber: string;
+  model: string;
+  status: string; // ACTIVE | INACTIVE | MAINTENANCE
+}
+
+export interface BackendMaintenanceRecord {
+  id: number;
+  vehicle: BackendVehicle;
+  description: string;
+  date: string;
+}
+
+export interface AuthResponse {
+  token: string;
+  role: UserRole;
+  approved?: boolean;
+}
+
+export interface ApiError {
+  timestamp?: string;
+  status?: number;
+  error?: string;
+  message?: string;
+  errors?: Record<string, string>;
+}
