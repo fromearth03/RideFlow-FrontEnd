@@ -46,7 +46,7 @@ const CreateRidePage = () => {
         await ridesApi.create(form.pickup, form.dropoff, scheduledTime);
       }
       toast({ title: 'Ride created', description: 'Your booking has been submitted successfully.' });
-      navigate(isDispatcher ? '/dispatch/rides' : '/rides');
+      navigate(isDispatcher ? '/dashboard' : '/rides');
     } catch (err: unknown) {
       const apiErr = err as ApiError;
       if (apiErr?.errors) {

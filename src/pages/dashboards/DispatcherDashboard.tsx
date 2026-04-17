@@ -6,9 +6,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { ridesApi, driversApi, dispatcherApi } from '@/services/api';
 import { useToast } from '@/hooks/use-toast';
+import { useAuth } from '@/contexts/AuthContext';
 import type { BackendRide, BackendDriver } from '@/types';
+import { clearRideRequests, getAllRideRequests } from '@/lib/rideAssignmentRequests';
 
 export const DispatcherDashboard = () => {
+  const { user } = useAuth();
   const { toast } = useToast();
   const [rides, setRides] = useState<BackendRide[]>([]);
   const [drivers, setDrivers] = useState<BackendDriver[]>([]);
@@ -16,14 +19,28 @@ export const DispatcherDashboard = () => {
   const [error, setError] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [assignDialog, setAssignDialog] = useState<BackendRide | null>(null);
+  const [requestDialog, setRequestDialog] = useState<BackendRide | null>(null);
   const [selectedDriver, setSelectedDriver] = useState('');
   const [assigning, setAssigning] = useState(false);
+  const [rideRequests, setRideRequests] = useState<Record<number, number[]>>({});
+  const canDispatch = user?.role === 'ROLE_DISPATCHER' || user?.role === 'ROLE_ADMIN';
+
+  const ensureDispatchRole = (): boolean => {
+    if (canDispatch) return true;
+    toast({
+      title: 'Forbidden action',
+      description: 'This action requires dispatcher or admin permissions.',
+      variant: 'destructive',
+    });
+    return false;
+  };
 
   const loadData = useCallback(async () => {
     try {
       const [r, d] = await Promise.all([ridesApi.getAll(), driversApi.getAll()]);
       setRides(r);
       setDrivers(d);
+      setRideRequests(getAllRideRequests());
     } catch {
       setError('Failed to load data.');
     } finally {
@@ -33,17 +50,27 @@ export const DispatcherDashboard = () => {
 
   useEffect(() => { loadData(); }, [loadData]);
 
-  const filtered = statusFilter === 'all' ? rides : rides.filter(r => r.status === statusFilter);
+  const inProgressDriverIds = new Set(
+    rides.filter(ride => ride.status === 'IN_PROGRESS' && ride.driverId !== null).map(ride => ride.driverId as number),
+  );
+
+  const dispatchVisibleRides = rides.filter(ride => ride.status !== 'IN_PROGRESS');
+  const filtered = statusFilter === 'all'
+    ? dispatchVisibleRides
+    : dispatchVisibleRides.filter(r => r.status === statusFilter);
   const pending = rides.filter(r => r.status === 'PENDING').length;
   const active = rides.filter(r => ['ASSIGNED', 'IN_PROGRESS'].includes(r.status)).length;
-  const availableDrivers = drivers.filter(d => d.isAvailable);
+  const availableDrivers = drivers.filter(d => d.isAvailable && !inProgressDriverIds.has(d.id));
 
   const assignDriver = async () => {
+    if (!ensureDispatchRole()) return;
     if (!assignDialog || !selectedDriver) return;
     setAssigning(true);
     try {
       const updated = await dispatcherApi.assignDriver(assignDialog.id, Number(selectedDriver));
       setRides(prev => prev.map(r => r.id === updated.id ? updated : r));
+      clearRideRequests(assignDialog.id);
+      setRideRequests(getAllRideRequests());
       // Mark driver as unavailable in local state
       setDrivers(prev => prev.map(d => d.id === Number(selectedDriver) ? { ...d, isAvailable: false } : d));
       toast({ title: 'Driver assigned', description: `Driver #${selectedDriver} assigned to ride #${assignDialog.id}.` });
@@ -58,13 +85,43 @@ export const DispatcherDashboard = () => {
   };
 
   const autoAssign = async (rideId: number) => {
+    if (!ensureDispatchRole()) return;
     try {
-      const updated = await dispatcherApi.autoAssign(rideId);
+      const requestedDriverIds = rideRequests[rideId] ?? [];
+      if (requestedDriverIds.length === 0) {
+        toast({
+          title: 'Auto-assign failed',
+          description: 'No drivers have requested this ride yet.',
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      const requestedAvailableDriver = requestedDriverIds
+        .map(requestedId => drivers.find(driver => driver.id === requestedId))
+        .find((driver): driver is BackendDriver => !!driver && driver.isAvailable && !inProgressDriverIds.has(driver.id));
+
+      if (!requestedAvailableDriver) {
+        toast({
+          title: 'Auto-assign failed',
+          description: 'Requested drivers are not currently available.',
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      const updated = await dispatcherApi.assignDriver(rideId, requestedAvailableDriver.id);
+
       setRides(prev => prev.map(r => r.id === updated.id ? updated : r));
+      clearRideRequests(rideId);
+      setRideRequests(getAllRideRequests());
       // Refresh drivers to get updated availability
       const d = await driversApi.getAll();
       setDrivers(d);
-      toast({ title: 'Auto-assigned', description: `Driver auto-assigned to ride #${rideId}.` });
+      toast({
+        title: 'Auto-assigned',
+        description: `Ride #${rideId} assigned to first requesting driver #${requestedAvailableDriver.id}.`,
+      });
     } catch (err: unknown) {
       const e = err as { message?: string };
       toast({ title: 'Auto-assign failed', description: e?.message || 'No available drivers.', variant: 'destructive' });
@@ -72,6 +129,7 @@ export const DispatcherDashboard = () => {
   };
 
   const updateStatus = async (rideId: number, status: string) => {
+    if (!ensureDispatchRole()) return;
     try {
       const updated = await ridesApi.updateStatus(rideId, status);
       setRides(prev => prev.map(r => r.id === updated.id ? updated : r));
@@ -93,7 +151,7 @@ export const DispatcherDashboard = () => {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-xl font-semibold text-foreground">Dispatch Operations</h1>
+        <h1 className="text-xl font-semibold text-foreground">City-to-City Booking</h1>
         <p className="text-sm text-muted-foreground">Monitor and manage all ride bookings.</p>
       </div>
 
@@ -114,7 +172,6 @@ export const DispatcherDashboard = () => {
             <SelectItem value="all">All Statuses</SelectItem>
             <SelectItem value="PENDING">Pending</SelectItem>
             <SelectItem value="ASSIGNED">Assigned</SelectItem>
-            <SelectItem value="IN_PROGRESS">In Progress</SelectItem>
             <SelectItem value="COMPLETED">Completed</SelectItem>
             <SelectItem value="CANCELLED">Cancelled</SelectItem>
           </SelectContent>
@@ -131,6 +188,7 @@ export const DispatcherDashboard = () => {
               <th>Drop-off</th>
               <th>Status</th>
               <th>Driver</th>
+              <th>Requests</th>
               <th>Actions</th>
             </tr>
           </thead>
@@ -147,32 +205,51 @@ export const DispatcherDashboard = () => {
                 </td>
                 <td className="text-muted-foreground">{ride.driverId ? `#${ride.driverId}` : '—'}</td>
                 <td>
+                  <div className="flex flex-wrap gap-1">
+                    {(rideRequests[ride.id] ?? []).length > 0 ? (
+                      (rideRequests[ride.id] ?? []).map(requestDriverId => {
+                        const requestedDriver = drivers.find(driver => driver.id === requestDriverId);
+                        return (
+                          <span key={`${ride.id}-${requestDriverId}`} className="status-badge status-pending">
+                            #{requestDriverId}
+                            {requestedDriver?.email ? ` · ${requestedDriver.email}` : ''}
+                          </span>
+                        );
+                      })
+                    ) : (
+                      <span className="text-xs text-muted-foreground">—</span>
+                    )}
+                  </div>
+                </td>
+                <td>
                   <div className="flex gap-1 flex-wrap">
                     {ride.status === 'PENDING' && (
                       <>
                         <Button size="sm" variant="outline" onClick={() => { setAssignDialog(ride); setSelectedDriver(''); }}>
                           <UserPlus className="h-3 w-3 mr-1" /> Assign
                         </Button>
-                        <Button size="sm" variant="outline" onClick={() => autoAssign(ride.id)}>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => setRequestDialog(ride)}
+                          disabled={(rideRequests[ride.id] ?? []).length === 0}
+                        >
+                          Requests ({(rideRequests[ride.id] ?? []).length})
+                        </Button>
+                        <Button size="sm" variant="outline" onClick={() => autoAssign(ride.id)} disabled={!canDispatch}>
                           <Zap className="h-3 w-3 mr-1" /> Auto
                         </Button>
                       </>
                     )}
-                    {ride.status === 'ASSIGNED' && (
-                      <Button size="sm" variant="outline" onClick={() => updateStatus(ride.id, 'IN_PROGRESS')}>Start</Button>
-                    )}
-                    {ride.status === 'IN_PROGRESS' && (
-                      <Button size="sm" variant="outline" onClick={() => updateStatus(ride.id, 'COMPLETED')}>Complete</Button>
-                    )}
                     {['PENDING', 'ASSIGNED', 'IN_PROGRESS'].includes(ride.status) && (
-                      <Button size="sm" variant="ghost" className="text-destructive" onClick={() => updateStatus(ride.id, 'CANCELLED')}>Cancel</Button>
+                      <Button size="sm" variant="ghost" className="text-destructive" onClick={() => updateStatus(ride.id, 'CANCELLED')} disabled={!canDispatch}>Cancel</Button>
                     )}
                   </div>
                 </td>
               </tr>
             ))}
             {filtered.length === 0 && (
-              <tr><td colSpan={6} className="text-center text-muted-foreground py-6">No rides found.</td></tr>
+              <tr><td colSpan={7} className="text-center text-muted-foreground py-6">No rides found.</td></tr>
             )}
           </tbody>
         </table>
@@ -211,10 +288,41 @@ export const DispatcherDashboard = () => {
               </div>
               <div className="flex justify-end gap-2">
                 <Button variant="outline" onClick={() => setAssignDialog(null)}>Cancel</Button>
-                <Button onClick={assignDriver} disabled={!selectedDriver || selectedDriver === 'none' || assigning}>
+                <Button onClick={assignDriver} disabled={!canDispatch || !selectedDriver || selectedDriver === 'none' || assigning}>
                   {assigning && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
                   Assign Driver
                 </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!requestDialog} onOpenChange={() => setRequestDialog(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Ride Request Queue</DialogTitle>
+          </DialogHeader>
+          {requestDialog && (
+            <div className="space-y-3">
+              <p className="text-sm text-muted-foreground">Ride #{requestDialog.id} requested drivers (first request has highest priority).</p>
+              <div className="space-y-2">
+                {(rideRequests[requestDialog.id] ?? []).map((requestDriverId, index) => {
+                  const requestedDriver = drivers.find(driver => driver.id === requestDriverId);
+                  return (
+                    <div key={`${requestDialog.id}-${requestDriverId}`} className="rounded-md border px-3 py-2 text-sm">
+                      <span className="font-medium">#{index + 1}</span>
+                      <span className="ml-2">Driver #{requestDriverId}</span>
+                      {requestedDriver?.email ? <span className="text-muted-foreground"> · {requestedDriver.email}</span> : null}
+                    </div>
+                  );
+                })}
+                {(rideRequests[requestDialog.id] ?? []).length === 0 && (
+                  <p className="text-sm text-muted-foreground">No requests for this ride.</p>
+                )}
+              </div>
+              <div className="flex justify-end">
+                <Button variant="outline" onClick={() => setRequestDialog(null)}>Close</Button>
               </div>
             </div>
           )}

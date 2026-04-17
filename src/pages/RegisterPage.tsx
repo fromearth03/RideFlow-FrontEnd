@@ -16,18 +16,21 @@ const ROLES: { value: UserRole; label: string; description: string }[] = [
 ];
 
 const RegisterPage = () => {
-  const { register, isAuthenticated } = useAuth();
+  const { register, isAuthenticated, user } = useAuth();
   const { toast } = useToast();
   const [form, setForm] = useState({
     email: '',
     password: '',
     confirmPassword: '',
     role: 'ROLE_CUSTOMER' as UserRole,
+    licenseNumber: '',
+    adminSecretKey: '',
+    adminSecretFileName: '',
   });
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  if (isAuthenticated) return <Navigate to="/dashboard" replace />;
+  if (isAuthenticated && user?.role !== 'ROLE_ADMIN') return <Navigate to="/dashboard" replace />;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -36,14 +39,37 @@ const RegisterPage = () => {
       setErrors({ confirmPassword: 'Passwords do not match.' });
       return;
     }
+    if (form.role === 'ROLE_DRIVER' && !form.licenseNumber.trim()) {
+      setErrors({ licenseNumber: 'License number is required for drivers.' });
+      return;
+    }
+    if (form.role === 'ROLE_ADMIN' && !form.adminSecretKey.trim()) {
+      setErrors({ adminSecretKey: 'Admin secret key file is required for admin registration.' });
+      return;
+    }
     setLoading(true);
     try {
-      await register({ email: form.email, password: form.password, role: form.role });
+      await register({
+        email: form.email,
+        password: form.password,
+        role: form.role,
+        licenseNumber: form.role === 'ROLE_DRIVER' ? form.licenseNumber.trim() : undefined,
+        adminSecretKey: form.role === 'ROLE_ADMIN' ? form.adminSecretKey.trim() : undefined,
+      });
       toast({ title: 'Account created', description: 'Welcome to RideFlow!' });
     } catch (err: unknown) {
       const apiErr = err as ApiError;
       if (apiErr?.errors) {
         setErrors(apiErr.errors);
+      } else if (
+        form.role === 'ROLE_ADMIN' &&
+        (apiErr?.status === 403 || apiErr?.message?.toLowerCase().includes('forbidden') || apiErr?.message === 'Error 403')
+      ) {
+        toast({
+          title: 'Admin registration forbidden',
+          description: 'Admin key was rejected or backend security is still blocking /auth/register/admin.',
+          variant: 'destructive',
+        });
       } else {
         toast({
           title: 'Registration failed',
@@ -58,6 +84,30 @@ const RegisterPage = () => {
 
   const update = (field: string) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setForm(f => ({ ...f, [field]: e.target.value }));
+
+  const handleAdminSecretFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) {
+      setForm(f => ({ ...f, adminSecretKey: '', adminSecretFileName: '' }));
+      return;
+    }
+
+    try {
+      const content = await file.text();
+      setForm(f => ({
+        ...f,
+        adminSecretKey: content.trim(),
+        adminSecretFileName: file.name,
+      }));
+      setErrors(prev => {
+        const { adminSecretKey, ...rest } = prev;
+        return rest;
+      });
+    } catch {
+      setForm(f => ({ ...f, adminSecretKey: '', adminSecretFileName: '' }));
+      setErrors(prev => ({ ...prev, adminSecretKey: 'Could not read selected key file.' }));
+    }
+  };
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
@@ -108,6 +158,40 @@ const RegisterPage = () => {
               <Input type="password" value={form.confirmPassword} onChange={update('confirmPassword')} required className="mt-1" />
               {errors.confirmPassword && <p className="text-xs text-destructive mt-1">{errors.confirmPassword}</p>}
             </div>
+
+            {form.role === 'ROLE_DRIVER' && (
+              <>
+                <div>
+                  <Label className="text-card-foreground">License Number</Label>
+                  <Input
+                    type="text"
+                    value={form.licenseNumber}
+                    onChange={update('licenseNumber')}
+                    required
+                    className="mt-1"
+                    placeholder="Enter your license number"
+                  />
+                  {errors.licenseNumber && <p className="text-xs text-destructive mt-1">{errors.licenseNumber}</p>}
+                </div>
+              </>
+            )}
+
+            {form.role === 'ROLE_ADMIN' && (
+              <div>
+                <Label className="text-card-foreground">Admin Secret Key File (.txt)</Label>
+                <Input
+                  type="file"
+                  accept=".txt,text/plain"
+                  onChange={handleAdminSecretFileChange}
+                  required
+                  className="mt-1"
+                />
+                {form.adminSecretFileName && (
+                  <p className="text-xs text-muted-foreground mt-1">Selected: {form.adminSecretFileName}</p>
+                )}
+                {errors.adminSecretKey && <p className="text-xs text-destructive mt-1">{errors.adminSecretKey}</p>}
+              </div>
+            )}
 
             <Button type="submit" className="w-full" disabled={loading}>
               {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}

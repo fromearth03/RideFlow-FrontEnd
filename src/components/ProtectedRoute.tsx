@@ -20,6 +20,13 @@ export const ProtectedRoute = ({ children, roles }: Props) => {
 
   if (!isAuthenticated) return <Navigate to="/login" replace />;
   if (roles && user && !roles.includes(user.role)) return <Navigate to="/unauthorized" replace />;
+  if (
+    user &&
+    (user.role === 'ROLE_DRIVER' || user.role === 'ROLE_DISPATCHER') &&
+    !user.approved
+  ) {
+    return <Navigate to="/login" replace state={{ pendingApproval: true }} />;
+  }
 
   return <>{children}</>;
 };

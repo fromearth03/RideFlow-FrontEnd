@@ -7,11 +7,13 @@ import { Label } from '@/components/ui/label';
 import { Plus, ToggleLeft, ToggleRight, Loader2, CheckCircle2, Trash2 } from 'lucide-react';
 import { driversApi, authApi, adminApi } from '@/services/api';
 import { useToast } from '@/hooks/use-toast';
-import type { BackendDriver } from '@/types';
+import type { BackendDriver, BackendVehicle } from '@/types';
 
 const AdminDriversPage = () => {
   const { toast } = useToast();
   const [drivers, setDrivers] = useState<BackendDriver[]>([]);
+  const [vehicles, setVehicles] = useState<BackendVehicle[]>([]);
+  const [driverUsersWithoutProfile, setDriverUsersWithoutProfile] = useState<number>(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [showAdd, setShowAdd] = useState(false);
@@ -22,10 +24,28 @@ const AdminDriversPage = () => {
 
   const load = useCallback(async () => {
     try {
-      const data = await adminApi.getDrivers();
+      setError('');
+      setDriverUsersWithoutProfile(0);
+      let data = await adminApi.getDrivers();
+      if (data.length === 0) {
+        const fallback = await driversApi.getAll();
+        if (fallback.length > 0) {
+          data = fallback;
+        }
+      }
       setDrivers(data);
-    } catch {
-      setError('Failed to load drivers.');
+
+      const vehicleData = await adminApi.getVehicles();
+      setVehicles(vehicleData);
+
+      const users = await adminApi.getUsers();
+      const driverUsers = users.filter(u => u.role === 'ROLE_DRIVER');
+      const profileEmails = new Set((data.map(d => d.email?.toLowerCase()).filter(Boolean) as string[]));
+      const withoutProfile = driverUsers.filter(u => !profileEmails.has(u.email.toLowerCase()));
+      setDriverUsersWithoutProfile(withoutProfile.length);
+    } catch (err: unknown) {
+      const e = err as { message?: string };
+      setError(e?.message || 'Failed to load drivers.');
     } finally {
       setLoading(false);
     }
@@ -80,17 +100,22 @@ const AdminDriversPage = () => {
     }
     setAddLoading(true);
     try {
-      // Step 1: Register driver user
-      const authRes = await authApi.registerDriver(form.email, form.password);
-      // Step 2: We don't get userId from register response, so we need to find it.
-      // We'll fetch all drivers after a short moment and find the newly added one.
-      // The backend does not return userId in authResponse, so we re-fetch and find new driver.
-      // Wait: we cannot create driver profile without userId. The backend register/driver only creates a User,
-      // not a Driver profile. We need POST /drivers with userId.
-      // Since we don't get userId from the register response, we inform the admin.
+      await authApi.registerDriver(form.email, form.password, form.licenseNumber);
+      const users = await adminApi.getUsers();
+      const matchedDriverUser = users
+        .filter(u => u.role === 'ROLE_DRIVER' && u.email.toLowerCase() === form.email.toLowerCase())
+        .sort((a, b) => b.id - a.id)[0];
+
+      if (!matchedDriverUser) {
+        throw new Error('Driver account was created, but user ID was not found. Please refresh and try again.');
+      }
+
+      await driversApi.create(matchedDriverUser.id, form.licenseNumber);
+      await load();
+
       toast({
-        title: 'Driver user created',
-        description: `Account for ${form.email} created. License profile setup requires a manual POST /drivers with their user ID from the database. To automate this, the backend would need to return userId on register.`,
+        title: 'Driver created',
+        description: `Account and driver profile for ${form.email} were created successfully.`,
       });
       setShowAdd(false);
       setForm({ email: '', password: '', licenseNumber: '' });
@@ -120,6 +145,13 @@ const AdminDriversPage = () => {
         {loading && <div className="flex items-center justify-center py-20"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>}
         {error && <p className="text-destructive text-sm">{error}</p>}
 
+        {!loading && !error && driverUsersWithoutProfile > 0 && (
+          <div className="rounded-md border border-yellow-200 bg-yellow-50 px-4 py-3 text-sm text-yellow-800 dark:border-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-300">
+            Found {driverUsersWithoutProfile} driver user account(s) without a driver profile in the `drivers` table.
+            Only profiles from `/drivers` or `/admin/drivers` appear in this list.
+          </div>
+        )}
+
         {!loading && !error && (
           <div className="overflow-x-auto rounded-lg border bg-card">
             <table className="data-table">
@@ -128,6 +160,7 @@ const AdminDriversPage = () => {
                   <th>Driver ID</th>
                   <th>Email</th>
                   <th>License Number</th>
+                  <th>Assigned Vehicles</th>
                   <th>Approved</th>
                   <th>Status</th>
                   <th>Actions</th>
@@ -135,10 +168,39 @@ const AdminDriversPage = () => {
               </thead>
               <tbody>
                 {drivers.map(d => (
+                  (() => {
+                    const assignedVehicles = vehicles
+                      .filter(vehicle => {
+                        const assignedId = vehicle.driverId ?? vehicle.assignedDriverId ?? null;
+                        if (!assignedId) return false;
+                        return assignedId === d.id || assignedId === (d.userId ?? null);
+                      })
+                      .map(vehicle => vehicle.plateNumber)
+                      .filter(Boolean);
+
+                    const dtoAssignedVehicles = (d.vehicleIds ?? []).map(vehicleId => {
+                      const matchedVehicle = vehicles.find(vehicle => vehicle.id === vehicleId);
+                      return matchedVehicle?.plateNumber ?? `Vehicle #${vehicleId}`;
+                    });
+
+                    const uniqueAssignedVehicles = Array.from(new Set([...assignedVehicles, ...dtoAssignedVehicles]));
+
+                    return (
                   <tr key={d.id}>
                     <td className="font-mono text-xs text-muted-foreground">#{d.id}</td>
                     <td className="font-medium">{d.email ?? '—'}</td>
-                    <td className="font-medium font-mono text-sm">{d.licenseNumber}</td>
+                    <td className="font-medium font-mono text-sm">{d.licenseNumber || '—'}</td>
+                    <td>
+                      {uniqueAssignedVehicles.length > 0 ? (
+                        <div className="flex flex-wrap gap-1">
+                          {uniqueAssignedVehicles.map(plate => (
+                            <span key={`${d.id}-${plate}`} className="status-badge status-completed">{plate}</span>
+                          ))}
+                        </div>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
+                    </td>
                     <td>
                       <span className={`status-badge ${d.approved ? 'status-completed' : 'status-pending'}`}>
                         {d.approved ? 'Approved' : 'Pending'}
@@ -187,9 +249,11 @@ const AdminDriversPage = () => {
                       </Button>
                     </td>
                   </tr>
+                    );
+                  })()
                 ))}
                 {drivers.length === 0 && (
-                  <tr><td colSpan={6} className="text-center text-muted-foreground py-6">No drivers yet.</td></tr>
+                  <tr><td colSpan={7} className="text-center text-muted-foreground py-6">No drivers yet.</td></tr>
                 )}
               </tbody>
             </table>

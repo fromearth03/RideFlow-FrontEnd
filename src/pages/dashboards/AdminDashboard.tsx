@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Car, Users, Truck, Activity } from 'lucide-react';
 import { StatCard } from '@/components/StatCard';
-import { ridesApi, driversApi, adminApi } from '@/services/api';
+import { ridesApi, adminApi } from '@/services/api';
 import type { BackendRide, BackendDriver, BackendVehicle } from '@/types';
 import { Loader2 } from 'lucide-react';
 
@@ -14,20 +14,34 @@ export const AdminDashboard = () => {
 
   useEffect(() => {
     const load = async () => {
-      try {
-        const [r, d, v] = await Promise.all([
-          ridesApi.getAll(),
-          driversApi.getAll(),
-          adminApi.getVehicles(),
-        ]);
-        setRides(r);
-        setDrivers(d);
-        setVehicles(v);
-      } catch {
-        setError('Failed to load dashboard data.');
-      } finally {
-        setLoading(false);
+      const [ridesResult, driversResult, vehiclesResult] = await Promise.allSettled([
+        ridesApi.getAll(),
+        adminApi.getDrivers(),
+        adminApi.getVehicles(),
+      ]);
+
+      if (ridesResult.status === 'fulfilled') {
+        setRides(ridesResult.value);
       }
+
+      if (driversResult.status === 'fulfilled') {
+        setDrivers(driversResult.value);
+      }
+
+      if (vehiclesResult.status === 'fulfilled') {
+        setVehicles(vehiclesResult.value);
+      }
+
+      const failures = [ridesResult, driversResult, vehiclesResult].filter(result => result.status === 'rejected');
+      if (failures.length > 0) {
+        const firstFailure = failures[0] as PromiseRejectedResult;
+        const reason = firstFailure.reason as { message?: string };
+        setError(reason?.message || 'Some dashboard data failed to load.');
+      } else {
+        setError('');
+      }
+
+      setLoading(false);
     };
     load();
   }, []);
@@ -41,14 +55,16 @@ export const AdminDashboard = () => {
     </div>
   );
 
-  if (error) return <p className="text-destructive py-8">{error}</p>;
-
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-xl font-semibold text-foreground">Admin Dashboard</h1>
         <p className="text-sm text-muted-foreground">System overview and management.</p>
       </div>
+
+      {error && (
+        <p className="text-sm text-destructive">{error}</p>
+      )}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard title="Total Rides" value={rides.length} icon={Car} />

@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Navigate, Link } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { Navigate, Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -9,12 +9,38 @@ import { useToast } from '@/hooks/use-toast';
 import type { ApiError } from '@/types';
 
 const LoginPage = () => {
+  const location = useLocation();
+  const navigate = useNavigate();
   const { login, isAuthenticated } = useAuth();
   const { toast } = useToast();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    if ((location.state as { pendingApproval?: boolean } | null)?.pendingApproval) {
+      toast({
+        title: 'Pending Approval',
+        description: 'You have not been approved. Contact the admin.',
+        variant: 'destructive',
+      });
+      navigate(location.pathname, { replace: true, state: null });
+      return;
+    }
+
+    const state = location.state as { justRegistered?: boolean; role?: string } | null;
+    if (state?.justRegistered) {
+      const isPendingRole = state.role === 'ROLE_DRIVER' || state.role === 'ROLE_DISPATCHER';
+      toast({
+        title: isPendingRole ? 'Registered Successfully' : 'Account Created',
+        description: isPendingRole
+          ? 'Your account is pending approval. Please sign in after admin approval.'
+          : 'Registration successful. Please sign in.',
+      });
+      navigate(location.pathname, { replace: true, state: null });
+    }
+  }, [location.pathname, location.state, navigate, toast]);
 
   if (isAuthenticated) {
     return <Navigate to="/dashboard" replace />;
@@ -51,17 +77,17 @@ const LoginPage = () => {
   return (
     <div className="flex min-h-screen">
       {/* Left panel */}
-      <div className="hidden lg:flex lg:w-1/2 flex-col justify-center px-16" style={{ backgroundColor: 'hsl(220, 25%, 12%)' }}>
+      <div className="hidden lg:flex lg:w-1/2 flex-col justify-center px-16 bg-[hsl(220,25%,12%)]">
         <div className="flex items-center gap-3 mb-8">
           <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary">
             <Shield className="h-5 w-5 text-primary-foreground" />
           </div>
-          <span className="text-2xl font-bold" style={{ color: 'hsl(0, 0%, 100%)' }}>RideFlow</span>
+          <span className="text-2xl font-bold text-white">RideFlow</span>
         </div>
-        <h1 className="text-3xl font-bold leading-tight mb-4" style={{ color: 'hsl(0, 0%, 100%)' }}>
+        <h1 className="text-3xl font-bold leading-tight mb-4 text-white">
           Private Long-Distance<br />Cab Booking Platform
         </h1>
-        <p className="text-base leading-relaxed" style={{ color: 'hsl(215, 20%, 65%)' }}>
+        <p className="text-base leading-relaxed text-[hsl(215,20%,65%)]">
           Professional fleet management and ride operations.
           Manage bookings, dispatch drivers, and monitor your entire fleet from one platform.
         </p>

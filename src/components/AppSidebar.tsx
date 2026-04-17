@@ -23,8 +23,8 @@ const navItems: NavItem[] = [
   { title: 'Book a Ride', url: '/rides/new', icon: MapPin, roles: ['ROLE_CUSTOMER'] },
   { title: 'My Rides', url: '/rides', icon: Car, roles: ['ROLE_CUSTOMER'] },
   { title: 'Incoming Rides', url: '/driver/rides', icon: ClipboardList, roles: ['ROLE_DRIVER'] },
-  { title: 'Ride Operations', url: '/dispatch/rides', icon: Headphones, roles: ['ROLE_DISPATCHER'] },
-  { title: 'Create Booking', url: '/dispatch/rides/new', icon: MapPin, roles: ['ROLE_DISPATCHER'] },
+  { title: 'City-to-City Booking', url: '/dispatch/rides', icon: Headphones, roles: ['ROLE_DISPATCHER'] },
+  { title: 'Create City Booking', url: '/dispatch/rides/new', icon: MapPin, roles: ['ROLE_DISPATCHER'] },
   { title: 'All Rides', url: '/admin/rides', icon: Car, roles: ['ROLE_ADMIN'] },
   { title: 'Drivers', url: '/admin/drivers', icon: UserCircle, roles: ['ROLE_ADMIN'] },
   { title: 'Dispatchers', url: '/admin/dispatchers', icon: Headphones, roles: ['ROLE_ADMIN'] },
@@ -48,26 +48,26 @@ export function AppSidebar() {
   const filteredItems = navItems.filter(item => user && item.roles.includes(user.role));
 
   return (
-    <Sidebar collapsible="icon" className="border-r-0" style={{ backgroundColor: 'hsl(var(--sidebar-bg))' }}>
-      <SidebarContent style={{ backgroundColor: 'hsl(var(--sidebar-bg))' }}>
+    <Sidebar collapsible="icon" className="border-r-0 bg-sidebar">
+      <SidebarContent className="bg-sidebar">
         {/* Logo */}
-        <div className="flex h-14 items-center gap-2 px-4" style={{ borderBottom: '1px solid hsl(var(--sidebar-border))' }}>
-          <div className="flex h-8 w-8 items-center justify-center rounded-md" style={{ backgroundColor: 'hsl(var(--sidebar-accent))' }}>
-            <Shield className="h-4 w-4" style={{ color: 'hsl(var(--primary))' }} />
+        <div className="flex h-14 items-center gap-2 border-b border-sidebar-border px-4">
+          <div className="flex h-8 w-8 items-center justify-center rounded-md bg-sidebar-accent">
+            <Shield className="h-4 w-4 text-primary" />
           </div>
-          {!collapsed && <span className="text-base font-bold" style={{ color: 'hsl(var(--sidebar-fg-active))' }}>RideFlow</span>}
+          {!collapsed && <span className="text-base font-bold text-sidebar-accent-foreground">RideFlow</span>}
         </div>
 
         {/* Role indicator */}
         {!collapsed && user && (
-          <div className="px-4 py-3" style={{ borderBottom: '1px solid hsl(var(--sidebar-border))' }}>
-            <p className="text-xs font-medium truncate" style={{ color: 'hsl(var(--sidebar-fg))' }}>{user.email}</p>
-            <p className="text-[10px] uppercase tracking-wider" style={{ color: 'hsl(var(--primary))' }}>{roleLabel[user.role]}</p>
+          <div className="border-b border-sidebar-border px-4 py-3">
+            <p className="truncate text-xs font-medium text-sidebar-foreground">{user.email}</p>
+            <p className="text-[10px] uppercase tracking-wider text-primary">{roleLabel[user.role]}</p>
           </div>
         )}
 
         <SidebarGroup>
-          <SidebarGroupLabel style={{ color: 'hsl(var(--sidebar-fg))' }} className="text-[10px] uppercase tracking-widest opacity-60">
+          <SidebarGroupLabel className="text-[10px] uppercase tracking-widest text-sidebar-foreground/60">
             Navigation
           </SidebarGroupLabel>
           <SidebarGroupContent>
@@ -77,7 +77,7 @@ export function AppSidebar() {
                   <SidebarMenuButton asChild>
                     <NavLink
                       to={item.url}
-                      end={item.url === '/dashboard'}
+                      end={item.url === '/dashboard' || item.url === '/rides' || item.url === '/dispatch/rides'}
                       className="flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors [color:hsl(var(--sidebar-fg))]"
                       activeClassName="font-medium [color:hsl(var(--sidebar-fg-active))] [background-color:hsl(var(--sidebar-border))]"
                     >
@@ -92,13 +92,12 @@ export function AppSidebar() {
         </SidebarGroup>
       </SidebarContent>
 
-      <SidebarFooter style={{ backgroundColor: 'hsl(var(--sidebar-bg))', borderTop: '1px solid hsl(var(--sidebar-border))' }}>
+      <SidebarFooter className="border-t border-sidebar-border bg-sidebar">
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton
               onClick={logout}
-              className="flex items-center gap-2 px-3 py-2 text-sm transition-colors hover:opacity-80"
-              style={{ color: 'hsl(var(--sidebar-fg))' }}
+              className="flex items-center gap-2 px-3 py-2 text-sm text-sidebar-foreground transition-colors hover:opacity-80"
             >
               <LogOut className="h-4 w-4" />
               {!collapsed && <span>Sign Out</span>}

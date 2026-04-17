@@ -8,26 +8,27 @@
   :root {
     --font-sans: 'IBM Plex Sans', system-ui, sans-serif;
 
-    --background: 210 20% 98%;
-    --foreground: 220 20% 10%;
+    /* Light theme (default for :root) */
+    --background: 210 40% 96%;
+    --foreground: 224 44% 12%;
 
     --card: 0 0% 100%;
-    --card-foreground: 220 20% 10%;
+    --card-foreground: 224 44% 12%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 220 20% 10%;
+    --popover-foreground: 224 44% 12%;
 
-    --primary: 217 71% 45%;
+    --primary: 217 91% 52%;
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 215 20% 95%;
-    --secondary-foreground: 220 20% 20%;
+    --secondary: 220 13% 91%;
+    --secondary-foreground: 224 44% 18%;
 
-    --muted: 215 20% 95%;
+    --muted: 220 13% 91%;
     --muted-foreground: 215 15% 50%;
 
-    --accent: 215 20% 93%;
-    --accent-foreground: 220 20% 10%;
+    --accent: 220 13% 89%;
+    --accent-foreground: 224 44% 12%;
 
     --destructive: 0 72% 51%;
     --destructive-foreground: 0 0% 100%;
@@ -38,26 +39,82 @@
     --warning: 38 92% 50%;
     --warning-foreground: 0 0% 100%;
 
-    --border: 215 20% 90%;
-    --input: 215 20% 90%;
-    --ring: 217 71% 45%;
+    --border: 220 13% 91%;
+    --input: 220 13% 91%;
+    --ring: 217 91% 52%;
 
     --radius: 0.5rem;
 
-    --sidebar-bg: 220 25% 12%;
-    --sidebar-fg: 215 20% 75%;
-    --sidebar-fg-active: 0 0% 100%;
-    --sidebar-border: 220 20% 18%;
-    --sidebar-accent: 217 71% 45%;
+    --sidebar-bg: 220 13% 94%;
+    --sidebar-fg: 215 25% 30%;
+    --sidebar-fg-active: 224 44% 8%;
+    --sidebar-border: 220 13% 88%;
+    --sidebar-accent: 217 91% 52%;
 
-    --sidebar-background: 220 25% 12%;
-    --sidebar-foreground: 215 20% 75%;
-    --sidebar-primary: 217 71% 45%;
+    --sidebar-background: 220 13% 94%;
+    --sidebar-foreground: 215 25% 30%;
+    --sidebar-primary: 217 91% 52%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 220 20% 18%;
+    --sidebar-accent: 220 13% 88%;
+    --sidebar-accent-foreground: 224 44% 8%;
+    --sidebar-border: 220 13% 88%;
+    --sidebar-ring: 217 91% 52%;
+  }
+
+  .dark {
+    --font-sans: 'IBM Plex Sans', system-ui, sans-serif;
+
+    /* Dark theme tokens */
+    --background: 224 44% 8%;
+    --foreground: 210 40% 96%;
+
+    --card: 224 39% 11%;
+    --card-foreground: 210 40% 96%;
+
+    --popover: 224 39% 11%;
+    --popover-foreground: 210 40% 96%;
+
+    --primary: 217 91% 60%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 220 26% 18%;
+    --secondary-foreground: 210 40% 92%;
+
+    --muted: 220 26% 16%;
+    --muted-foreground: 215 20% 70%;
+
+    --accent: 220 26% 18%;
+    --accent-foreground: 210 40% 96%;
+
+    --destructive: 0 72% 55%;
+    --destructive-foreground: 0 0% 100%;
+
+    --success: 142 71% 35%;
+    --success-foreground: 0 0% 100%;
+
+    --warning: 38 92% 50%;
+    --warning-foreground: 0 0% 100%;
+
+    --border: 220 24% 22%;
+    --input: 220 24% 22%;
+    --ring: 217 91% 60%;
+
+    --radius: 0.5rem;
+
+    --sidebar-bg: 224 48% 10%;
+    --sidebar-fg: 215 20% 78%;
+    --sidebar-fg-active: 0 0% 100%;
+    --sidebar-border: 220 24% 22%;
+    --sidebar-accent: 217 91% 60%;
+
+    --sidebar-background: 224 48% 10%;
+    --sidebar-foreground: 215 20% 78%;
+    --sidebar-primary: 217 91% 60%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 220 24% 22%;
     --sidebar-accent-foreground: 0 0% 100%;
-    --sidebar-border: 220 20% 18%;
-    --sidebar-ring: 217 71% 45%;
+    --sidebar-border: 220 24% 22%;
+    --sidebar-ring: 217 91% 60%;
   }
 }
 
@@ -67,6 +124,7 @@
   }
   body {
     @apply bg-background text-foreground font-sans antialiased;
+    color-scheme: light dark;
   }
 }
 

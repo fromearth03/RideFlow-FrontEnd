@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
 import { AppLayout } from '@/components/AppLayout';
 import { Button } from '@/components/ui/button';
-import { Loader2, CheckCircle2, Trash2 } from 'lucide-react';
-import { adminApi } from '@/services/api';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Loader2, CheckCircle2, Trash2, Plus } from 'lucide-react';
+import { adminApi, authApi } from '@/services/api';
 import { useToast } from '@/hooks/use-toast';
 import type { BackendDispatcher } from '@/types';
 
@@ -12,6 +15,10 @@ const AdminDispatchersPage = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [busyId, setBusyId] = useState<number | null>(null);
+  const [showAdd, setShowAdd] = useState(false);
+  const [addLoading, setAddLoading] = useState(false);
+  const [form, setForm] = useState({ email: '', password: '' });
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
 
   const load = useCallback(async () => {
     try {
@@ -58,12 +65,40 @@ const AdminDispatchersPage = () => {
     }
   };
 
+  const handleAdd = async () => {
+    setFormErrors({});
+    if (!form.email || !form.password) {
+      setFormErrors({ general: 'Email and password are required.' });
+      return;
+    }
+    setAddLoading(true);
+    try {
+      await authApi.registerDispatcher(form.email, form.password);
+      await load();
+      toast({ title: 'Dispatcher created', description: `${form.email} registered successfully.` });
+      setShowAdd(false);
+      setForm({ email: '', password: '' });
+    } catch (err: unknown) {
+      const apiErr = err as { errors?: Record<string, string>; message?: string };
+      if (apiErr?.errors) {
+        setFormErrors(apiErr.errors);
+      } else {
+        toast({ title: 'Failed to add dispatcher', description: apiErr?.message, variant: 'destructive' });
+      }
+    } finally {
+      setAddLoading(false);
+    }
+  };
+
   return (
     <AppLayout>
       <div className="space-y-4">
-        <div>
-          <h1 className="text-xl font-semibold text-foreground">Dispatchers</h1>
-          <p className="text-sm text-muted-foreground">Approve and manage dispatcher accounts.</p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-xl font-semibold text-foreground">Dispatchers</h1>
+            <p className="text-sm text-muted-foreground">Approve and manage dispatcher accounts.</p>
+          </div>
+          <Button onClick={() => setShowAdd(true)}><Plus className="h-4 w-4 mr-1" /> Add Dispatcher</Button>
         </div>
 
         {loading && (
@@ -140,6 +175,42 @@ const AdminDispatchersPage = () => {
             </table>
           </div>
         )}
+
+        <Dialog open={showAdd} onOpenChange={setShowAdd}>
+          <DialogContent>
+            <DialogHeader><DialogTitle>Add Dispatcher Account</DialogTitle></DialogHeader>
+            <div className="space-y-3">
+              <div>
+                <Label>Email</Label>
+                <Input
+                  type="email"
+                  value={form.email}
+                  onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
+                  className="mt-1"
+                />
+                {formErrors.email && <p className="text-xs text-destructive mt-1">{formErrors.email}</p>}
+              </div>
+              <div>
+                <Label>Password</Label>
+                <Input
+                  type="password"
+                  value={form.password}
+                  onChange={e => setForm(f => ({ ...f, password: e.target.value }))}
+                  className="mt-1"
+                />
+                {formErrors.password && <p className="text-xs text-destructive mt-1">{formErrors.password}</p>}
+              </div>
+              {formErrors.general && <p className="text-xs text-destructive">{formErrors.general}</p>}
+              <div className="flex justify-end gap-2">
+                <Button variant="outline" onClick={() => setShowAdd(false)}>Cancel</Button>
+                <Button onClick={handleAdd} disabled={addLoading}>
+                  {addLoading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                  Create Dispatcher
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
     </AppLayout>
   );

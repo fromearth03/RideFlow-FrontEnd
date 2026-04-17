@@ -7,6 +7,8 @@ interface RegisterData {
   email: string;
   password: string;
   role: UserRole;
+  licenseNumber?: string;
+  adminSecretKey?: string;
 }
 
 interface AuthContextType extends AuthState {
@@ -40,6 +42,7 @@ function requiresApproval(role: UserRole): boolean {
 
 function resolveApproval(role: UserRole, approved?: boolean | null): boolean {
   if (!requiresApproval(role)) return true;
+  if (approved === undefined || approved === null) return true;
   return approved === true;
 }
 
@@ -60,8 +63,17 @@ const AuthProviderInner: React.FC<{ children: React.ReactNode }> = ({ children }
     const approvedRaw = localStorage.getItem('approved');
     const approved = approvedRaw === null ? undefined : approvedRaw === 'true';
     if (token && role && email) {
+      const resolvedApproved = resolveApproval(role, approved);
+      if (requiresApproval(role) && !resolvedApproved) {
+        localStorage.removeItem('token');
+        localStorage.removeItem('role');
+        localStorage.removeItem('email');
+        localStorage.removeItem('approved');
+        setState({ user: null, token: null, isAuthenticated: false, isLoading: false });
+        return;
+      }
       setState({
-        user: { email, role, approved: resolveApproval(role, approved) },
+        user: { email, role, approved: resolvedApproved },
         token,
         isAuthenticated: true,
         isLoading: false,
@@ -99,26 +111,35 @@ const AuthProviderInner: React.FC<{ children: React.ReactNode }> = ({ children }
     navigate(getRoleDashboard(data.role), { replace: true });
   }, [navigate]);
 
-  const register = useCallback(async ({ email, password, role }: RegisterData) => {
+  const register = useCallback(async ({ email, password, role, licenseNumber, adminSecretKey }: RegisterData) => {
     let data;
     switch (role) {
       case 'ROLE_DRIVER':
-        data = await authApi.registerDriver(email, password);
+        if (!licenseNumber?.trim()) {
+          throw { errors: { licenseNumber: 'License number is required for drivers.' } };
+        }
+        data = await authApi.registerDriver(email, password, licenseNumber.trim());
         break;
       case 'ROLE_DISPATCHER':
         data = await authApi.registerDispatcher(email, password);
         break;
       case 'ROLE_ADMIN':
-        data = await authApi.registerAdmin(email, password);
+        if (!adminSecretKey?.trim()) {
+          throw { errors: { adminSecretKey: 'Admin secret key is required.' } };
+        }
+        data = await authApi.registerAdmin(email, password, adminSecretKey.trim());
         break;
       case 'ROLE_CUSTOMER':
       default:
         data = await authApi.registerCustomer(email, password);
         break;
     }
-    const approved = resolveApproval(data.role, data.approved);
-    persistAuth(email, data.token, data.role, approved);
-    navigate(getRoleDashboard(data.role), { replace: true });
+    localStorage.removeItem('token');
+    localStorage.removeItem('role');
+    localStorage.removeItem('email');
+    localStorage.removeItem('approved');
+    setState({ user: null, token: null, isAuthenticated: false, isLoading: false });
+    navigate('/login', { replace: true, state: { justRegistered: true, role: data.role } });
   }, [navigate]);
 
   const logout = useCallback(() => {

@@ -29,10 +29,13 @@ export interface BackendRide {
 
 export interface BackendDriver {
   id: number;
+  userId?: number | null;
   email?: string;
   licenseNumber: string;
   isAvailable: boolean;
   approved?: boolean;
+  vehicleIds?: number[];
+  vehicleModels?: Array<string | null>;
 }
 
 export interface BackendDispatcher {
@@ -58,6 +61,12 @@ export interface BackendVehicle {
   plateNumber: string;
   model: string;
   status: string; // ACTIVE | INACTIVE | MAINTENANCE
+  driverId?: number | null;
+  assignedDriverId?: number | null;
+  driverEmail?: string | null;
+  assignedDriverEmail?: string | null;
+  driverName?: string | null;
+  assignedDriverName?: string | null;
 }
 
 export interface BackendMaintenanceRecord {

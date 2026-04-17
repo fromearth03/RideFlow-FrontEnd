@@ -5,6 +5,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
+import { ThemeProvider } from "@/components/theme-provider";
 
 import LoginPage from "./pages/LoginPage";
 import RegisterPage from "./pages/RegisterPage";
@@ -26,12 +27,13 @@ const queryClient = new QueryClient();
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
-    <BrowserRouter>
-      <AuthProvider>
-        <TooltipProvider>
-          <Toaster />
-          <Sonner />
-          <Routes>
+    <ThemeProvider attribute="class" defaultTheme="dark" enableSystem={false}>
+      <BrowserRouter>
+        <AuthProvider>
+          <TooltipProvider>
+            <Toaster />
+            <Sonner />
+            <Routes>
             <Route path="/" element={<Navigate to="/login" replace />} />
             <Route path="/login" element={<LoginPage />} />
             <Route path="/register" element={<RegisterPage />} />
@@ -62,14 +64,16 @@ const App = () => (
             <Route path="/admin/drivers" element={<ProtectedRoute roles={['ROLE_ADMIN']}><AdminDriversPage /></ProtectedRoute>} />
             <Route path="/admin/dispatchers" element={<ProtectedRoute roles={['ROLE_ADMIN']}><AdminDispatchersPage /></ProtectedRoute>} />
             <Route path="/admin/vehicles" element={<ProtectedRoute roles={['ROLE_ADMIN']}><AdminVehiclesPage /></ProtectedRoute>} />
+            <Route path="/admin/users" element={<ProtectedRoute roles={['ROLE_ADMIN']}><AdminUsersPage /></ProtectedRoute>} />
             <Route path="/admin/customers" element={<ProtectedRoute roles={['ROLE_ADMIN']}><AdminUsersPage /></ProtectedRoute>} />
             <Route path="/admin/activity" element={<ProtectedRoute roles={['ROLE_ADMIN']}><AdminActivityPage /></ProtectedRoute>} />
 
             <Route path="*" element={<NotFound />} />
-          </Routes>
-        </TooltipProvider>
-      </AuthProvider>
-    </BrowserRouter>
+            </Routes>
+          </TooltipProvider>
+        </AuthProvider>
+      </BrowserRouter>
+    </ThemeProvider>
   </QueryClientProvider>
 );
 

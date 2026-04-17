@@ -33,7 +33,10 @@ async function handleResponse<T>(res: Response): Promise<T> {
     throw new Error('Unauthorized');
   }
   if (!res.ok) {
-    const err = await res.json().catch(() => ({ message: `Error ${res.status}` }));
+    const err = await res.json().catch(() => ({ status: res.status, message: `Error ${res.status}` }));
+    if (!('status' in (err as Record<string, unknown>))) {
+      (err as Record<string, unknown>).status = res.status;
+    }
     // Preserve the full error object (may contain errors map or message)
     throw err;
   }
@@ -41,6 +44,309 @@ async function handleResponse<T>(res: Response): Promise<T> {
   const text = await res.text();
   if (!text) return undefined as unknown as T;
   return JSON.parse(text) as T;
+}
+
+function extractList<T>(payload: unknown, keys: string[]): T[] {
+  if (Array.isArray(payload)) return payload as T[];
+  if (payload && typeof payload === 'object') {
+    const record = payload as Record<string, unknown>;
+    for (const key of keys) {
+      if (Array.isArray(record[key])) {
+        return record[key] as T[];
+      }
+    }
+  }
+  return [];
+}
+
+function getNestedValue(record: Record<string, unknown>, paths: string[]): unknown {
+  for (const path of paths) {
+    const parts = path.split('.');
+    let current: unknown = record;
+    let exists = true;
+
+    for (const part of parts) {
+      if (!current || typeof current !== 'object' || !(part in (current as Record<string, unknown>))) {
+        exists = false;
+        break;
+      }
+      current = (current as Record<string, unknown>)[part];
+    }
+
+    if (exists && current !== undefined && current !== null) {
+      return current;
+    }
+  }
+
+  return undefined;
+}
+
+function toNumberArray(value: unknown): number[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map(item => Number(item))
+    .filter(item => Number.isFinite(item) && item > 0);
+}
+
+function toStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map(item => String(item ?? '').trim())
+    .filter(item => item.length > 0);
+}
+
+function toNullableStringArray(value: unknown): Array<string | null> {
+  if (!Array.isArray(value)) return [];
+  return value.map(item => {
+    if (item === null || item === undefined) return null;
+    const normalized = String(item).trim();
+    return normalized.length > 0 ? normalized : null;
+  });
+}
+
+function toPositiveNumber(value: unknown): number | null {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+function extractEntityId(value: unknown): number | null {
+  const direct = toPositiveNumber(value);
+  if (direct) return direct;
+
+  if (!value || typeof value !== 'object') return null;
+  const record = value as Record<string, unknown>;
+
+  const nested = getNestedValue(record, [
+    'id',
+    'driverId',
+    'driver_id',
+    'userId',
+    'user_id',
+    'user.id',
+    'user.userId',
+    'driver.id',
+    'driver.user.id',
+  ]);
+
+  return toPositiveNumber(nested);
+}
+
+function normalizeDriver(payload: unknown): BackendDriver {
+  const record = (payload ?? {}) as Record<string, unknown>;
+  const user = (record.user ?? {}) as Record<string, unknown>;
+  const parsedUserId = Number(record.userId ?? record.user_id ?? user.id ?? user.userId ?? 0);
+  const userId = Number.isFinite(parsedUserId) && parsedUserId > 0 ? parsedUserId : null;
+  const vehicleIdsFromDto = toNumberArray(
+    record.vehicleIds ?? record.vehicle_ids ?? record.assignedVehicleIds ?? record.assigned_vehicle_ids,
+  );
+  const vehicleModelsFromDto = toNullableStringArray(
+    record.vehicleModels ??
+    record.vehicle_models ??
+    record.assignedVehicleModels ??
+    record.assigned_vehicle_models,
+  );
+  const assignedVehiclesRaw = getNestedValue(record, [
+    'assignedVehicles',
+    'assigned_vehicles',
+    'assignedVehicle',
+    'assigned_vehicle',
+    'vehicles',
+    'vehicle',
+    'vehicleDTOs',
+    'vehicleDtos',
+    'assignedVehicleDTOs',
+    'assignedVehicleDtos',
+    'assignedVehicleDTO',
+    'assignedVehicleDto',
+    'data.assignedVehicles',
+    'data.assigned_vehicles',
+    'data.assignedVehicle',
+    'data.vehicleDTOs',
+    'data.vehicleDtos',
+  ]);
+  const assignedVehicleList = Array.isArray(assignedVehiclesRaw)
+    ? assignedVehiclesRaw
+    : assignedVehiclesRaw && typeof assignedVehiclesRaw === 'object'
+      ? [assignedVehiclesRaw]
+      : [];
+  const assignedVehicles = assignedVehicleList.length > 0
+    ? normalizeVehicles({ vehicles: assignedVehicleList })
+    : [];
+  const derivedVehicleIds = assignedVehicles
+    .map(vehicle => vehicle.id)
+    .filter(vehicleId => Number.isFinite(vehicleId) && vehicleId > 0);
+  const vehicleIds = Array.from(new Set([...vehicleIdsFromDto, ...derivedVehicleIds]));
+
+  const derivedVehicleModels = assignedVehicles.map(vehicle => {
+    const model = vehicle.model?.trim();
+    return model ? model : null;
+  });
+  const vehicleModels = vehicleModelsFromDto.length > 0 ? vehicleModelsFromDto : derivedVehicleModels;
+
+  return {
+    id: Number(record.id ?? 0),
+    userId,
+    email: String((record.email ?? user.email ?? '') || '') || undefined,
+    licenseNumber: String(record.licenseNumber ?? record.license_number ?? ''),
+    isAvailable: Boolean(record.isAvailable ?? record.is_available ?? record.available ?? false),
+    approved: Boolean(record.approved ?? record.isApproved ?? record.is_approved ?? false),
+    vehicleIds,
+    vehicleModels,
+  };
+}
+
+function normalizeDrivers(payload: unknown): BackendDriver[] {
+  const list = extractList<unknown>(payload, ['drivers', 'data', 'content', 'items']);
+  return list.map(normalizeDriver).filter(driver => driver.id > 0);
+}
+
+function normalizeVehicle(payload: unknown): BackendVehicle {
+  const record = (payload ?? {}) as Record<string, unknown>;
+  const driverId =
+    extractEntityId(getNestedValue(record, [
+      'driverId',
+      'driver_id',
+      'assignedDriverId',
+      'assigned_driver_id',
+      'assignedToDriverId',
+      'assigned_to_driver_id',
+    ])) ??
+    extractEntityId(record.driver) ??
+    extractEntityId(record.assignedDriver) ??
+    extractEntityId(record.assigned_to) ??
+    extractEntityId(record.assignedTo) ??
+    extractEntityId(record.driverDTO) ??
+    extractEntityId(record.driverDto) ??
+    null;
+
+  const driverEmail = String(
+    getNestedValue(record, [
+      'driverEmail',
+      'assignedDriverEmail',
+      'assigned_driver_email',
+      'driver.email',
+      'assignedDriver.email',
+      'assignedTo.email',
+      'assigned_to.email',
+      'driver.user.email',
+      'driverDTO.email',
+      'driverDto.email',
+      'driverDTO.user.email',
+      'driverDto.user.email',
+      'assignedDriver.user.email',
+      'assignedTo.user.email',
+      'assigned_to.user.email',
+    ]) ?? '',
+  ) || null;
+
+  const driverName = String(
+    getNestedValue(record, [
+      'driverName',
+      'assignedDriverName',
+      'assigned_driver_name',
+      'driver.name',
+      'driver.fullName',
+      'assignedDriver.name',
+      'assignedDriver.fullName',
+      'assignedTo.name',
+      'assignedTo.fullName',
+      'assigned_to.name',
+      'assigned_to.fullName',
+      'driver.user.name',
+      'driver.user.fullName',
+      'driverDTO.name',
+      'driverDTO.fullName',
+      'driverDto.name',
+      'driverDto.fullName',
+      'driverDTO.user.name',
+      'driverDTO.user.fullName',
+      'driverDto.user.name',
+      'driverDto.user.fullName',
+      'assignedDriver.user.name',
+      'assignedDriver.user.fullName',
+      'assignedTo.user.name',
+      'assignedTo.user.fullName',
+      'assigned_to.user.name',
+      'assigned_to.user.fullName',
+    ]) ?? '',
+  ) || null;
+
+  return {
+    id: Number(record.id ?? 0),
+    plateNumber: String(record.plateNumber ?? record.plate_number ?? ''),
+    model: String(record.model ?? record.modelName ?? record.model_name ?? record.vehicleModel ?? record.vehicle_model ?? ''),
+    status: String(record.status ?? 'INACTIVE'),
+    driverId,
+    assignedDriverId: driverId,
+    driverEmail,
+    assignedDriverEmail: driverEmail,
+    driverName,
+    assignedDriverName: driverName,
+  };
+}
+
+function normalizeVehicles(payload: unknown): BackendVehicle[] {
+  const list = extractList<unknown>(payload, ['vehicles', 'data', 'content', 'items']);
+  return list.map(normalizeVehicle).filter(vehicle => vehicle.id > 0);
+}
+
+function toBooleanLike(value: unknown): boolean | undefined {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === 'true') return true;
+    if (normalized === 'false') return false;
+  }
+  if (typeof value === 'number') {
+    if (value === 1) return true;
+    if (value === 0) return false;
+  }
+  return undefined;
+}
+
+function normalizeAuthResponse(payload: unknown): AuthResponse {
+  const record = (payload ?? {}) as Record<string, unknown>;
+  const user = (record.user ?? {}) as Record<string, unknown>;
+
+  const token = String(record.token ?? record.accessToken ?? record.jwt ?? '');
+  const role = String(record.role ?? user.role ?? 'ROLE_CUSTOMER');
+  const approved = toBooleanLike(
+    record.approved ??
+    record.isApproved ??
+    record.is_approved ??
+    user.approved ??
+    user.isApproved ??
+    user.is_approved,
+  );
+
+  return {
+    token,
+    role: role as AuthResponse['role'],
+    approved,
+  };
+}
+
+function getOptionalAuthHeader(): Record<string, string> {
+  const token = localStorage.getItem('token');
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+async function requestWithFallback<T>(requests: (() => Promise<Response>)[]): Promise<T> {
+  let lastError: unknown = null;
+  for (let index = 0; index < requests.length; index += 1) {
+    try {
+      const response = await requests[index]();
+      return await handleResponse<T>(response);
+    } catch (error) {
+      lastError = error;
+      const status = Number((error as { status?: number })?.status ?? 0);
+      const shouldTryNext = index < requests.length - 1 && (status === 404 || status === 405);
+      if (!shouldTryNext) {
+        throw error;
+      }
+    }
+  }
+  throw lastError;
 }
 
 // ─── Auth API ─────────────────────────────────────────────────────────────────
@@ -51,7 +357,8 @@ export const authApi = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password }),
     });
-    return handleResponse<AuthResponse>(res);
+    const data = await handleResponse<unknown>(res);
+    return normalizeAuthResponse(data);
   },
 
   registerCustomer: async (email: string, password: string): Promise<AuthResponse> => {
@@ -60,34 +367,52 @@ export const authApi = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password }),
     });
-    return handleResponse<AuthResponse>(res);
+    const data = await handleResponse<unknown>(res);
+    return normalizeAuthResponse(data);
   },
 
-  registerDriver: async (email: string, password: string): Promise<AuthResponse> => {
+  registerDriver: async (email: string, password: string, licenseNumber: string): Promise<AuthResponse> => {
     const res = await fetch(`${BASE_URL}/auth/register/driver`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password }),
+      headers: {
+        'Content-Type': 'application/json',
+        ...getOptionalAuthHeader(),
+      },
+      body: JSON.stringify({
+        email,
+        password,
+        licenseNumber,
+      }),
     });
-    return handleResponse<AuthResponse>(res);
+    const data = await handleResponse<unknown>(res);
+    return normalizeAuthResponse(data);
   },
 
   registerDispatcher: async (email: string, password: string): Promise<AuthResponse> => {
     const res = await fetch(`${BASE_URL}/auth/register/dispatcher`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...getOptionalAuthHeader(),
+      },
       body: JSON.stringify({ email, password }),
     });
-    return handleResponse<AuthResponse>(res);
+    const data = await handleResponse<unknown>(res);
+    return normalizeAuthResponse(data);
   },
 
-  registerAdmin: async (email: string, password: string): Promise<AuthResponse> => {
+  registerAdmin: async (email: string, password: string, adminSecretKey: string): Promise<AuthResponse> => {
     const res = await fetch(`${BASE_URL}/auth/register/admin`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Admin-Secret-Key': adminSecretKey,
+        ...getOptionalAuthHeader(),
+      },
       body: JSON.stringify({ email, password }),
     });
-    return handleResponse<AuthResponse>(res);
+    const data = await handleResponse<unknown>(res);
+    return normalizeAuthResponse(data);
   },
 };
 
@@ -128,7 +453,10 @@ export const ridesApi = {
 export const driversApi = {
   getAll: async (): Promise<BackendDriver[]> => {
     const res = await fetch(`${BASE_URL}/drivers`, { headers: getAuthHeaders() });
-    return handleResponse<BackendDriver[]>(res);
+    const data = await handleResponse<unknown>(res);
+    const normalized = normalizeDrivers(data);
+    if (normalized.length > 0) return normalized;
+    return extractList<BackendDriver>(data, ['data', 'content', 'items']);
   },
 
   create: async (userId: number, licenseNumber: string): Promise<BackendDriver> => {
@@ -145,8 +473,29 @@ export const driversApi = {
       method: 'PATCH',
       headers: getAuthHeaders(),
     });
-    return handleResponse<BackendDriver>(res);
+    const data = await handleResponse<unknown>(res);
+    return normalizeDriver(data);
   },
+
+  updateVehicleDetails: async (
+    driverId: number,
+    vehicleId: number,
+    payload: { model?: string; status?: string },
+  ): Promise<BackendDriver> => {
+    const body = JSON.stringify({
+      ...(payload.model ? { model: payload.model.trim() } : {}),
+      ...(payload.status ? { status: payload.status } : {}),
+    });
+
+    const res = await fetch(`${BASE_URL}/drivers/${driverId}/vehicles/${vehicleId}/details`, {
+      method: 'PATCH',
+      headers: getAuthHeaders(),
+      body,
+    });
+    const data = await handleResponse<unknown>(res);
+    return normalizeDriver(data);
+  },
+
 };
 
 // ─── Dispatcher API ───────────────────────────────────────────────────────────
@@ -194,7 +543,10 @@ export const adminApi = {
 
   getDrivers: async (): Promise<BackendDriver[]> => {
     const res = await fetch(`${BASE_URL}/admin/drivers`, { headers: getAuthHeaders() });
-    return handleResponse<BackendDriver[]>(res);
+    const data = await handleResponse<unknown>(res);
+    const normalized = normalizeDrivers(data);
+    if (normalized.length > 0) return normalized;
+    return extractList<BackendDriver>(data, ['data', 'content', 'items']);
   },
 
   deleteDriver: async (id: number): Promise<void> => {
@@ -210,7 +562,8 @@ export const adminApi = {
       method: 'PATCH',
       headers: getAuthHeaders(),
     });
-    return handleResponse<BackendDriver>(res);
+    const data = await handleResponse<unknown>(res);
+    return normalizeDriver(data);
   },
 
   getDispatchers: async (): Promise<BackendDispatcher[]> => {
@@ -249,7 +602,10 @@ export const adminApi = {
 
   getVehicles: async (): Promise<BackendVehicle[]> => {
     const res = await fetch(`${BASE_URL}/admin/vehicles`, { headers: getAuthHeaders() });
-    return handleResponse<BackendVehicle[]>(res);
+    const data = await handleResponse<unknown>(res);
+    const normalized = normalizeVehicles(data);
+    if (normalized.length > 0) return normalized;
+    return extractList<BackendVehicle>(data, ['vehicles', 'data', 'content', 'items']);
   },
 
   addVehicle: async (plateNumber: string, model: string, status: string): Promise<BackendVehicle> => {
@@ -261,6 +617,24 @@ export const adminApi = {
     return handleResponse<BackendVehicle>(res);
   },
 
+  disableVehicle: async (vehicleId: number): Promise<BackendVehicle> => {
+    const res = await fetch(`${BASE_URL}/admin/vehicles/${vehicleId}/disable`, {
+      method: 'PATCH',
+      headers: getAuthHeaders(),
+    });
+    const data = await handleResponse<unknown>(res);
+    return normalizeVehicle(data);
+  },
+
+  enableVehicle: async (vehicleId: number): Promise<BackendVehicle> => {
+    const res = await fetch(`${BASE_URL}/admin/vehicles/${vehicleId}/enable`, {
+      method: 'PATCH',
+      headers: getAuthHeaders(),
+    });
+    const data = await handleResponse<unknown>(res);
+    return normalizeVehicle(data);
+  },
+
   addMaintenance: async (vehicleId: number, description: string): Promise<BackendMaintenanceRecord> => {
     const res = await fetch(`${BASE_URL}/admin/vehicles/${vehicleId}/maintenance`, {
       method: 'POST',
@@ -268,5 +642,48 @@ export const adminApi = {
       body: JSON.stringify({ description }),
     });
     return handleResponse<BackendMaintenanceRecord>(res);
+  },
+
+  assignVehicleToDriver: async (driverId: number, vehicleId: number): Promise<BackendVehicle> => {
+    const data = await requestWithFallback<unknown>([
+      () => fetch(`${BASE_URL}/admin/drivers/${driverId}/vehicle/${vehicleId}`, {
+        method: 'PATCH',
+        headers: getAuthHeaders(),
+      }),
+      () => fetch(`${BASE_URL}/admin/drivers/${driverId}/vehicle/${vehicleId}`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+      }),
+    ]);
+
+    return normalizeVehicle(data);
+  },
+
+  unassignVehicleFromDriver: async (driverId: number, vehicleId: number): Promise<void> => {
+    const data = await requestWithFallback<void | unknown>([
+      () => fetch(`${BASE_URL}/admin/drivers/${driverId}/vehicle/${vehicleId}`, {
+        method: 'DELETE',
+        headers: getAuthHeaders(),
+      }),
+      () => fetch(`${BASE_URL}/admin/vehicles/${vehicleId}/driver/${driverId}`, {
+        method: 'DELETE',
+        headers: getAuthHeaders(),
+      }),
+    ]);
+
+    return data as void;
+  },
+
+  assignVehicleToDriverByPlate: async (plateNumber: string, driverId: number): Promise<BackendVehicle> => {
+    const vehicles = await adminApi.getVehicles();
+    const matchedVehicle = vehicles.find(
+      vehicle => vehicle.plateNumber.trim().toLowerCase() === plateNumber.trim().toLowerCase(),
+    );
+
+    if (!matchedVehicle) {
+      throw { status: 404, message: `Vehicle with plate ${plateNumber} was not found.` };
+    }
+
+    return adminApi.assignVehicleToDriver(driverId, matchedVehicle.id);
   },
 };
