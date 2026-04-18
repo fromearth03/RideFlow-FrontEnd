@@ -3,26 +3,34 @@ import { AppLayout } from '@/components/AppLayout';
 import { Button } from '@/components/ui/button';
 import { Link } from 'react-router-dom';
 import { Plus, Loader2, X } from 'lucide-react';
-import { ridesApi } from '@/services/api';
+import { ridesApi, resolveCachedUserIdByEmail } from '@/services/api';
 import { useToast } from '@/hooks/use-toast';
+import { useAuth } from '@/contexts/AuthContext';
 import type { BackendRide } from '@/types';
 
 const UserRidesPage = () => {
   const { toast } = useToast();
+  const { user } = useAuth();
   const [rides, setRides] = useState<BackendRide[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
   const load = useCallback(async () => {
     try {
-      const data = await ridesApi.getAll();
+      const resolvedUserId = user?.id ?? resolveCachedUserIdByEmail(user?.email);
+      if (!resolvedUserId) {
+        setRides([]);
+        setError('');
+        return;
+      }
+      const data = await ridesApi.getByUserId(resolvedUserId);
       setRides(data);
     } catch {
       setError('Failed to load rides.');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [user?.id, user?.email]);
 
   const cancelRide = async (rideId: number) => {
     try {

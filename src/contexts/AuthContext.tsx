@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { AuthUser, AuthState, UserRole } from '@/types';
-import { authApi } from '@/services/api';
+import { authApi, resolveCachedUserIdByEmail } from '@/services/api';
 
 interface RegisterData {
   email: string;
@@ -47,6 +47,29 @@ function resolveApproval(role: UserRole, approved?: boolean | null): boolean {
   return approved === true;
 }
 
+function extractUserIdFromToken(token: string | null): number | null {
+  if (!token) return null;
+  const parts = token.split('.');
+  if (parts.length < 2) return null;
+
+  try {
+    const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    const padded = base64.padEnd(Math.ceil(base64.length / 4) * 4, '=');
+    const payload = JSON.parse(atob(padded)) as Record<string, unknown>;
+    const candidates = [payload.userId, payload.user_id, payload.id, payload.uid, payload.sub];
+    for (const candidate of candidates) {
+      const parsed = Number(candidate);
+      if (Number.isFinite(parsed) && parsed > 0) {
+        return parsed;
+      }
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+}
+
 const AuthProviderInner: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const navigate = useNavigate();
   const [state, setState] = useState<AuthState>({
@@ -61,6 +84,11 @@ const AuthProviderInner: React.FC<{ children: React.ReactNode }> = ({ children }
     const token = localStorage.getItem('token');
     const role = localStorage.getItem('role') as UserRole | null;
     const email = localStorage.getItem('email');
+    const storedUserId = Number(localStorage.getItem('userId') ?? 0);
+    const persistedUserId = Number.isFinite(storedUserId) && storedUserId > 0 ? storedUserId : null;
+    const tokenUserId = extractUserIdFromToken(token);
+    const cachedUserId = resolveCachedUserIdByEmail(email);
+    const userId = persistedUserId ?? tokenUserId ?? cachedUserId;
     const approvedRaw = localStorage.getItem('approved');
     const approved = approvedRaw === null ? undefined : approvedRaw === 'true';
     if (token && role && email) {
@@ -70,15 +98,19 @@ const AuthProviderInner: React.FC<{ children: React.ReactNode }> = ({ children }
         localStorage.removeItem('role');
         localStorage.removeItem('email');
         localStorage.removeItem('approved');
+        localStorage.removeItem('userId');
         setState({ user: null, token: null, isAuthenticated: false, isLoading: false });
         return;
       }
       setState({
-        user: { email, role, approved: resolvedApproved },
+        user: { id: userId, email, role, approved: resolvedApproved },
         token,
         isAuthenticated: true,
         isLoading: false,
       });
+      if (userId && userId > 0) {
+        localStorage.setItem('userId', String(userId));
+      }
     } else {
       setState(s => ({ ...s, isLoading: false }));
     }
@@ -94,12 +126,17 @@ const AuthProviderInner: React.FC<{ children: React.ReactNode }> = ({ children }
     return () => window.removeEventListener('auth:logout', handler);
   }, [navigate]);
 
-  const persistAuth = (email: string, token: string, role: UserRole, approved: boolean) => {
+  const persistAuth = (email: string, token: string, role: UserRole, approved: boolean, userId?: number | null) => {
     localStorage.setItem('token', token);
     localStorage.setItem('role', role);
     localStorage.setItem('email', email);
     localStorage.setItem('approved', String(approved));
-    setState({ user: { email, role, approved }, token, isAuthenticated: true, isLoading: false });
+    if (userId && userId > 0) {
+      localStorage.setItem('userId', String(userId));
+    } else {
+      localStorage.removeItem('userId');
+    }
+    setState({ user: { id: userId ?? null, email, role, approved }, token, isAuthenticated: true, isLoading: false });
   };
 
   const login = useCallback(async (email: string, password: string) => {
@@ -108,7 +145,8 @@ const AuthProviderInner: React.FC<{ children: React.ReactNode }> = ({ children }
     if (requiresApproval(data.role) && !approved) {
       throw { message: 'You have not been approved. Contact the admin.' };
     }
-    persistAuth(email, data.token, data.role, approved);
+    const fallbackUserId = data.userId ?? resolveCachedUserIdByEmail(email);
+    persistAuth(email, data.token, data.role, approved, fallbackUserId);
     navigate(getRoleDashboard(data.role), { replace: true });
   }, [navigate]);
 
@@ -139,6 +177,7 @@ const AuthProviderInner: React.FC<{ children: React.ReactNode }> = ({ children }
     localStorage.removeItem('role');
     localStorage.removeItem('email');
     localStorage.removeItem('approved');
+    localStorage.removeItem('userId');
     setState({ user: null, token: null, isAuthenticated: false, isLoading: false });
     navigate('/login', { replace: true, state: { justRegistered: true, role: data.role } });
   }, [navigate]);
@@ -148,6 +187,7 @@ const AuthProviderInner: React.FC<{ children: React.ReactNode }> = ({ children }
     localStorage.removeItem('role');
     localStorage.removeItem('email');
     localStorage.removeItem('approved');
+    localStorage.removeItem('userId');
     setState({ user: null, token: null, isAuthenticated: false, isLoading: false });
     navigate('/login', { replace: true });
   }, [navigate]);

@@ -14,6 +14,74 @@ const configuredApiUrl = (import.meta.env.VITE_API_BASE_URL as string | undefine
 const BASE_URL = (configuredApiUrl && configuredApiUrl.length > 0
   ? configuredApiUrl
   : 'https://api.aliakbar.systems').replace(/\/$/, '');
+const USER_ID_BY_EMAIL_STORAGE_KEY = 'rideflow:userIdByEmail';
+
+function normalizeEmailKey(email: string): string {
+  return email.trim().toLowerCase();
+}
+
+function readUserIdByEmailMap(): Record<string, number> {
+  try {
+    const raw = localStorage.getItem(USER_ID_BY_EMAIL_STORAGE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== 'object') return {};
+
+    const next: Record<string, number> = {};
+    for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
+      const normalizedKey = normalizeEmailKey(key);
+      const parsedId = Number(value);
+      if (normalizedKey && Number.isFinite(parsedId) && parsedId > 0) {
+        next[normalizedKey] = parsedId;
+      }
+    }
+    return next;
+  } catch {
+    return {};
+  }
+}
+
+function writeUserIdByEmailMap(map: Record<string, number>): void {
+  try {
+    localStorage.setItem(USER_ID_BY_EMAIL_STORAGE_KEY, JSON.stringify(map));
+  } catch {
+    return;
+  }
+}
+
+function cacheUserIdByEmail(email: string, userId: number): void {
+  const normalizedEmail = normalizeEmailKey(email);
+  if (!normalizedEmail) return;
+  if (!Number.isFinite(userId) || userId <= 0) return;
+
+  const current = readUserIdByEmailMap();
+  current[normalizedEmail] = userId;
+  writeUserIdByEmailMap(current);
+}
+
+function cacheUserIdEntries(entries: Array<{ id: number; email: string }>): void {
+  if (entries.length === 0) return;
+  const current = readUserIdByEmailMap();
+
+  for (const entry of entries) {
+    const normalizedEmail = normalizeEmailKey(entry.email);
+    if (!normalizedEmail) continue;
+    if (!Number.isFinite(entry.id) || entry.id <= 0) continue;
+    current[normalizedEmail] = entry.id;
+  }
+
+  writeUserIdByEmailMap(current);
+}
+
+export function resolveCachedUserIdByEmail(email: string | null | undefined): number | null {
+  if (!email) return null;
+  const normalizedEmail = normalizeEmailKey(email);
+  if (!normalizedEmail) return null;
+
+  const map = readUserIdByEmailMap();
+  const mappedId = Number(map[normalizedEmail] ?? 0);
+  return Number.isFinite(mappedId) && mappedId > 0 ? mappedId : null;
+}
 
 // ─── Auth Headers ─────────────────────────────────────────────────────────────
 export function getAuthHeaders(): Record<string, string> {
@@ -30,6 +98,7 @@ async function handleResponse<T>(res: Response): Promise<T> {
     localStorage.removeItem('token');
     localStorage.removeItem('role');
     localStorage.removeItem('approved');
+    localStorage.removeItem('userId');
     window.dispatchEvent(new Event('auth:logout'));
     throw new Error('Unauthorized');
   }
@@ -146,6 +215,12 @@ function normalizeDriver(payload: unknown): BackendDriver {
     record.assignedVehicleModels ??
     record.assigned_vehicle_models,
   );
+  const vehicleStatusesFromDto = toNullableStringArray(
+    record.vehicleStatuses ??
+    record.vehicle_statuses ??
+    record.assignedVehicleStatuses ??
+    record.assigned_vehicle_statuses,
+  );
   const assignedVehiclesRaw = getNestedValue(record, [
     'assignedVehicles',
     'assigned_vehicles',
@@ -182,7 +257,12 @@ function normalizeDriver(payload: unknown): BackendDriver {
     const model = vehicle.model?.trim();
     return model ? model : null;
   });
+  const derivedVehicleStatuses = assignedVehicles.map(vehicle => {
+    const status = vehicle.status?.trim();
+    return status ? status : null;
+  });
   const vehicleModels = vehicleModelsFromDto.length > 0 ? vehicleModelsFromDto : derivedVehicleModels;
+  const vehicleStatuses = vehicleStatusesFromDto.length > 0 ? vehicleStatusesFromDto : derivedVehicleStatuses;
 
   return {
     id: Number(record.id ?? 0),
@@ -193,6 +273,7 @@ function normalizeDriver(payload: unknown): BackendDriver {
     approved: Boolean(record.approved ?? record.isApproved ?? record.is_approved ?? false),
     vehicleIds,
     vehicleModels,
+    vehicleStatuses,
   };
 }
 
@@ -305,6 +386,45 @@ function toBooleanLike(value: unknown): boolean | undefined {
   return undefined;
 }
 
+function parseJwtPayload(token: string): Record<string, unknown> | null {
+  if (!token) return null;
+  const parts = token.split('.');
+  if (parts.length < 2) return null;
+
+  try {
+    const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    const padded = base64.padEnd(Math.ceil(base64.length / 4) * 4, '=');
+    const json = atob(padded);
+    const parsed = JSON.parse(json) as unknown;
+    if (!parsed || typeof parsed !== 'object') return null;
+    return parsed as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
+function extractUserIdFromJwt(token: string): number | null {
+  const payload = parseJwtPayload(token);
+  if (!payload) return null;
+
+  const candidates = [
+    payload.userId,
+    payload.user_id,
+    payload.id,
+    payload.uid,
+    payload.sub,
+  ];
+
+  for (const candidate of candidates) {
+    const parsed = Number(candidate);
+    if (Number.isFinite(parsed) && parsed > 0) {
+      return parsed;
+    }
+  }
+
+  return null;
+}
+
 function normalizeAuthResponse(payload: unknown): AuthResponse {
   const record = (payload ?? {}) as Record<string, unknown>;
   const user = (record.user ?? {}) as Record<string, unknown>;
@@ -320,10 +440,35 @@ function normalizeAuthResponse(payload: unknown): AuthResponse {
     user.is_approved,
   );
 
+  const userIdCandidate = getNestedValue(record, [
+    'userId',
+    'user_id',
+    'id',
+    'user.id',
+    'user.userId',
+    'user.user_id',
+    'data.userId',
+    'data.user_id',
+    'data.id',
+    'data.user.id',
+    'data.user.userId',
+    'principal.id',
+    'principal.userId',
+    'account.id',
+    'account.userId',
+    'profile.id',
+    'profile.userId',
+  ]);
+  const parsedUserId = Number(userIdCandidate ?? 0);
+  const directUserId = Number.isFinite(parsedUserId) && parsedUserId > 0 ? parsedUserId : null;
+  const tokenUserId = extractUserIdFromJwt(token);
+  const userId = directUserId ?? tokenUserId;
+
   return {
     token,
     role: role as AuthResponse['role'],
     approved,
+    userId,
   };
 }
 
@@ -360,11 +505,31 @@ export const authApi = {
     });
     const data = await handleResponse<unknown>(res);
     const normalized = normalizeAuthResponse(data);
+    const tokenPayload = parseJwtPayload(normalized.token);
+    const tokenEmailCandidate = String(
+      tokenPayload?.email ?? tokenPayload?.username ?? tokenPayload?.preferred_username ?? tokenPayload?.sub ?? '',
+    );
+    const tokenEmail = tokenEmailCandidate.includes('@') ? tokenEmailCandidate : null;
+    const resolvedUserId =
+      normalized.userId ??
+      resolveCachedUserIdByEmail(email) ??
+      resolveCachedUserIdByEmail(tokenEmail);
+
+    if (resolvedUserId) {
+      cacheUserIdByEmail(email, resolvedUserId);
+      if (tokenEmail) {
+        cacheUserIdByEmail(tokenEmail, resolvedUserId);
+      }
+    }
+
     await safeRecordBlockchainEvent('USER_SIGN_IN', {
       email,
       role: normalized.role,
     });
-    return normalized;
+    return {
+      ...normalized,
+      userId: resolvedUserId,
+    };
   },
 
   registerCustomer: async (email: string, password: string, phone?: string): Promise<AuthResponse> => {
@@ -449,6 +614,11 @@ export const authApi = {
 export const ridesApi = {
   getAll: async (): Promise<BackendRide[]> => {
     const res = await fetch(`${BASE_URL}/rides`, { headers: getAuthHeaders() });
+    return handleResponse<BackendRide[]>(res);
+  },
+
+  getByUserId: async (userId: number): Promise<BackendRide[]> => {
+    const res = await fetch(`${BASE_URL}/rides/user/${userId}`, { headers: getAuthHeaders() });
     return handleResponse<BackendRide[]>(res);
   },
 
@@ -554,11 +724,24 @@ export const driversApi = {
 
 // ─── Dispatcher API ───────────────────────────────────────────────────────────
 export const dispatcherApi = {
-  createRide: async (pickupLocation: string, dropLocation: string, scheduledTime: string, inter_city: boolean): Promise<BackendRide> => {
+  createRide: async (
+    pickupLocation: string,
+    dropLocation: string,
+    scheduledTime: string,
+    inter_city: boolean,
+    customer?: { id?: number; email?: string },
+  ): Promise<BackendRide> => {
     const res = await fetch(`${BASE_URL}/dispatcher/rides`, {
       method: 'POST',
       headers: getAuthHeaders(),
-      body: JSON.stringify({ pickupLocation, dropLocation, scheduledTime, inter_city }),
+      body: JSON.stringify({
+        pickupLocation,
+        dropLocation,
+        scheduledTime,
+        inter_city,
+        customerId: customer?.id,
+        customerEmail: customer?.email,
+      }),
     });
     const ride = await handleResponse<BackendRide>(res);
     await safeRecordBlockchainEvent('RIDE_CREATE', {
@@ -568,6 +751,8 @@ export const dispatcherApi = {
       scheduledTime,
       inter_city,
       source: 'dispatcher',
+      customerId: customer?.id ?? null,
+      customerEmail: customer?.email ?? null,
     });
     return ride;
   },
@@ -599,7 +784,13 @@ export const dispatcherApi = {
 export const adminApi = {
   getUsers: async (): Promise<BackendUser[]> => {
     const res = await fetch(`${BASE_URL}/admin/users`, { headers: getAuthHeaders() });
-    return handleResponse<BackendUser[]>(res);
+    const users = await handleResponse<BackendUser[]>(res);
+    cacheUserIdEntries(
+      users
+        .filter(user => Number.isFinite(user.id) && user.id > 0 && Boolean(user.email))
+        .map(user => ({ id: user.id, email: user.email })),
+    );
+    return users;
   },
 
   deleteUser: async (id: number): Promise<void> => {
@@ -678,7 +869,13 @@ export const adminApi = {
 
   getCustomers: async (): Promise<BackendCustomer[]> => {
     const res = await fetch(`${BASE_URL}/admin/customers`, { headers: getAuthHeaders() });
-    return handleResponse<BackendCustomer[]>(res);
+    const customers = await handleResponse<BackendCustomer[]>(res);
+    cacheUserIdEntries(
+      customers
+        .filter(customer => Number.isFinite(customer.id) && customer.id > 0 && Boolean(customer.email))
+        .map(customer => ({ id: customer.id, email: customer.email })),
+    );
+    return customers;
   },
 
   deleteCustomer: async (id: number): Promise<void> => {

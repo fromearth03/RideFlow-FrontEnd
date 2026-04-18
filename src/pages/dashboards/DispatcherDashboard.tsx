@@ -24,13 +24,13 @@ export const DispatcherDashboard = () => {
   const [selectedDriver, setSelectedDriver] = useState('');
   const [assigning, setAssigning] = useState(false);
   const [rideRequests, setRideRequests] = useState<Record<number, number[]>>({});
-  const canDispatch = user?.role === 'ROLE_DISPATCHER' || user?.role === 'ROLE_ADMIN';
+  const canDispatch = user?.role === 'ROLE_DISPATCHER';
 
   const ensureDispatchRole = (): boolean => {
     if (canDispatch) return true;
     toast({
       title: 'Forbidden action',
-      description: 'This action requires dispatcher or admin permissions.',
+      description: 'This action requires dispatcher permissions.',
       variant: 'destructive',
     });
     return false;
@@ -67,19 +67,45 @@ export const DispatcherDashboard = () => {
   }
   const pending = rides.filter(r => r.status === 'PENDING').length;
   const active = rides.filter(r => ['ASSIGNED', 'IN_PROGRESS'].includes(r.status)).length;
-  const availableDrivers = drivers.filter(d => d.isAvailable && !inProgressDriverIds.has(d.id));
+
+  const isOperableVehicleStatus = (status: string | null | undefined): boolean => {
+    const normalized = (status ?? '').trim().toUpperCase();
+    return normalized === 'ACTIVE';
+  };
+
+  const hasAssignedVehicle = (driver: BackendDriver): boolean => {
+    const statuses = driver.vehicleStatuses ?? [];
+    if (statuses.length === 0) return false;
+    return statuses.some(status => isOperableVehicleStatus(status));
+  };
+
+  const isDriverEligibleForAssignment = (driver: BackendDriver): boolean => {
+    return driver.isAvailable && !inProgressDriverIds.has(driver.id) && hasAssignedVehicle(driver);
+  };
+
+  const availableDrivers = drivers.filter(isDriverEligibleForAssignment);
 
   const assignDriver = async () => {
     if (!ensureDispatchRole()) return;
     if (!assignDialog || !selectedDriver) return;
+    const selectedDriverId = Number(selectedDriver);
+    const eligibleDriver = availableDrivers.find(driver => driver.id === selectedDriverId);
+    if (!eligibleDriver) {
+      toast({
+        title: 'Assignment blocked',
+        description: 'Selected driver is not eligible. Driver must be available and have at least one ACTIVE assigned vehicle.',
+        variant: 'destructive',
+      });
+      return;
+    }
     setAssigning(true);
     try {
-      const updated = await dispatcherApi.assignDriver(assignDialog.id, Number(selectedDriver));
+      const updated = await dispatcherApi.assignDriver(assignDialog.id, selectedDriverId);
       setRides(prev => prev.map(r => r.id === updated.id ? updated : r));
       clearRideRequests(assignDialog.id);
       setRideRequests(getAllRideRequests());
       // Mark driver as unavailable in local state
-      setDrivers(prev => prev.map(d => d.id === Number(selectedDriver) ? { ...d, isAvailable: false } : d));
+      setDrivers(prev => prev.map(d => d.id === selectedDriverId ? { ...d, isAvailable: false } : d));
       toast({ title: 'Driver assigned', description: `Driver #${selectedDriver} assigned to ride #${assignDialog.id}.` });
       setAssignDialog(null);
       setSelectedDriver('');
@@ -106,12 +132,12 @@ export const DispatcherDashboard = () => {
 
       const requestedAvailableDriver = requestedDriverIds
         .map(requestedId => drivers.find(driver => driver.id === requestedId))
-        .find((driver): driver is BackendDriver => !!driver && driver.isAvailable && !inProgressDriverIds.has(driver.id));
+        .find((driver): driver is BackendDriver => !!driver && isDriverEligibleForAssignment(driver));
 
       if (!requestedAvailableDriver) {
         toast({
           title: 'Auto-assign failed',
-          description: 'Requested drivers are not currently available.',
+          description: 'Requested drivers are not eligible (must be available and have at least one ACTIVE vehicle).',
           variant: 'destructive',
         });
         return;

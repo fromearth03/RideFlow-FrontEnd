@@ -26,17 +26,19 @@ export const DriverDashboard = () => {
       if (currentDriver) {
         const dtoVehicleIds = currentDriver.vehicleIds ?? [];
         const dtoVehicleModels = currentDriver.vehicleModels ?? [];
-        const itemCount = Math.max(dtoVehicleIds.length, dtoVehicleModels.length);
+        const dtoVehicleStatuses = currentDriver.vehicleStatuses ?? [];
+        const itemCount = Math.max(dtoVehicleIds.length, dtoVehicleModels.length, dtoVehicleStatuses.length);
 
         const vehicles: BackendVehicle[] = Array.from({ length: itemCount }, (_, index) => {
           const vehicleId = dtoVehicleIds[index] ?? -(index + 1);
           const model = dtoVehicleModels[index]?.trim() ?? '';
+          const status = dtoVehicleStatuses[index]?.trim() ?? 'INACTIVE';
 
           return {
             id: vehicleId,
             plateNumber: dtoVehicleIds[index] ? `Vehicle #${dtoVehicleIds[index]}` : 'Assigned vehicle',
             model,
-            status: 'ACTIVE',
+            status,
           };
         });
 
@@ -54,12 +56,25 @@ export const DriverDashboard = () => {
   useEffect(() => { loadRides(); }, [loadRides]);
 
   const hasAssignedVehicle = assignedVehicles.length > 0;
+  const hasOperableVehicle = assignedVehicles.some(vehicle => {
+    const normalized = (vehicle.status ?? '').trim().toUpperCase();
+    return normalized === 'ACTIVE';
+  });
 
   const updateStatus = async (rideId: number, status: string) => {
     if (!hasAssignedVehicle && status === 'IN_PROGRESS') {
       toast({
         title: 'Vehicle assignment required',
         description: 'You need an assigned vehicle before starting a ride.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    if (!hasOperableVehicle) {
+      toast({
+        title: 'Action blocked',
+        description: 'Your assigned vehicle is disabled. Contact dispatch/admin.',
         variant: 'destructive',
       });
       return;
@@ -76,7 +91,9 @@ export const DriverDashboard = () => {
   };
 
   const myRides = driverId === null ? [] : rides.filter(r => r.driverId === driverId);
-  const assignedRides = myRides.filter(r => ['ASSIGNED', 'IN_PROGRESS', 'COMPLETED'].includes(r.status));
+  const assignedRides = hasOperableVehicle
+    ? myRides.filter(r => ['ASSIGNED', 'IN_PROGRESS', 'COMPLETED'].includes(r.status))
+    : [];
   const activeRides = assignedRides.filter(r => ['ASSIGNED', 'IN_PROGRESS'].includes(r.status));
   const completed = assignedRides.filter(r => r.status === 'COMPLETED');
 
@@ -118,6 +135,12 @@ export const DriverDashboard = () => {
             </p>
           )}
 
+          {hasAssignedVehicle && !hasOperableVehicle && (
+            <p className="text-xs text-destructive">
+              All assigned vehicles are disabled. You cannot view or accept rides until a vehicle is enabled.
+            </p>
+          )}
+
           {assignedVehicles.length > 0 && (
             <div className="rounded-md border bg-muted/30 p-3 space-y-2">
               <p className="text-xs font-medium text-foreground">Currently Assigned Vehicles</p>
@@ -137,7 +160,10 @@ export const DriverDashboard = () => {
       <div>
         <h2 className="text-sm font-semibold text-foreground mb-3">Assigned Rides</h2>
         <div className="space-y-3">
-          {assignedRides.length === 0 && (
+          {!hasOperableVehicle && hasAssignedVehicle && (
+            <p className="text-muted-foreground text-sm py-6 text-center">Rides are hidden because your assigned vehicle is disabled.</p>
+          )}
+          {assignedRides.length === 0 && (hasOperableVehicle || !hasAssignedVehicle) && (
             <p className="text-muted-foreground text-sm py-6 text-center">No rides assigned yet.</p>
           )}
           {assignedRides.map(ride => (

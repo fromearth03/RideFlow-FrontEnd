@@ -3,30 +3,23 @@ import { AppLayout } from '@/components/AppLayout';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Loader2, UserPlus } from 'lucide-react';
-import { ridesApi, driversApi } from '@/services/api';
+import { Loader2 } from 'lucide-react';
+import { ridesApi } from '@/services/api';
 import { useToast } from '@/hooks/use-toast';
-import type { BackendRide, BackendDriver } from '@/types';
+import type { BackendRide } from '@/types';
 
 const AdminRidesPage = () => {
   const { toast } = useToast();
   const [rides, setRides] = useState<BackendRide[]>([]);
-  const [drivers, setDrivers] = useState<BackendDriver[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [assignDialog, setAssignDialog] = useState<BackendRide | null>(null);
-  const [selectedDriver, setSelectedDriver] = useState('');
-  const [assigning, setAssigning] = useState(false);
   const [statusDialog, setStatusDialog] = useState<BackendRide | null>(null);
   const [newStatus, setNewStatus] = useState('');
 
   const load = useCallback(async () => {
     try {
-      const [r, d] = await Promise.all([ridesApi.getAll(), driversApi.getAll()]);
+      const r = await ridesApi.getAll();
       setRides(r);
-      setDrivers(d);
     } catch {
       setError('Failed to load data.');
     } finally {
@@ -35,22 +28,6 @@ const AdminRidesPage = () => {
   }, []);
 
   useEffect(() => { load(); }, [load]);
-
-  const handleAssign = async () => {
-    if (!assignDialog || !selectedDriver) return;
-    setAssigning(true);
-    try {
-      const updated = await ridesApi.assignDriver(assignDialog.id, Number(selectedDriver));
-      setRides(prev => prev.map(r => r.id === updated.id ? updated : r));
-      toast({ title: 'Driver assigned', description: `Driver #${selectedDriver} → Ride #${assignDialog.id}` });
-      setAssignDialog(null);
-    } catch (err: unknown) {
-      const e = err as { message?: string };
-      toast({ title: 'Failed', description: e?.message, variant: 'destructive' });
-    } finally {
-      setAssigning(false);
-    }
-  };
 
   const handleStatus = async () => {
     if (!statusDialog || !newStatus) return;
@@ -64,8 +41,6 @@ const AdminRidesPage = () => {
       toast({ title: 'Failed', description: e?.message, variant: 'destructive' });
     }
   };
-
-  const availableDrivers = drivers.filter(d => d.isAvailable);
 
   return (
     <AppLayout>
@@ -105,11 +80,6 @@ const AdminRidesPage = () => {
                     <td className="text-muted-foreground">{r.driverId ? `#${r.driverId}` : '—'}</td>
                     <td>
                       <div className="flex gap-1">
-                        {r.status === 'PENDING' && (
-                          <Button size="sm" variant="outline" onClick={() => { setAssignDialog(r); setSelectedDriver(''); }}>
-                            <UserPlus className="h-3 w-3 mr-1" /> Assign
-                          </Button>
-                        )}
                         <Button size="sm" variant="ghost" onClick={() => { setStatusDialog(r); setNewStatus(r.status); }}>
                           Status
                         </Button>
@@ -124,30 +94,6 @@ const AdminRidesPage = () => {
             </table>
           </div>
         )}
-
-        {/* Assign Driver Dialog */}
-        <Dialog open={!!assignDialog} onOpenChange={() => setAssignDialog(null)}>
-          <DialogContent>
-            <DialogHeader><DialogTitle>Assign Driver to Ride #{assignDialog?.id}</DialogTitle></DialogHeader>
-            <div className="space-y-4">
-              <Select value={selectedDriver} onValueChange={setSelectedDriver}>
-                <SelectTrigger><SelectValue placeholder="Select available driver..." /></SelectTrigger>
-                <SelectContent>
-                  {availableDrivers.map(d => (
-                    <SelectItem key={d.id} value={String(d.id)}>#{d.id} — {d.licenseNumber}</SelectItem>
-                  ))}
-                  {availableDrivers.length === 0 && <SelectItem value="none" disabled>No available drivers</SelectItem>}
-                </SelectContent>
-              </Select>
-              <div className="flex justify-end gap-2">
-                <Button variant="outline" onClick={() => setAssignDialog(null)}>Cancel</Button>
-                <Button onClick={handleAssign} disabled={!selectedDriver || selectedDriver === 'none' || assigning}>
-                  {assigning && <Loader2 className="h-4 w-4 mr-2 animate-spin" />} Assign
-                </Button>
-              </div>
-            </div>
-          </DialogContent>
-        </Dialog>
 
         {/* Update Status Dialog */}
         <Dialog open={!!statusDialog} onOpenChange={() => setStatusDialog(null)}>

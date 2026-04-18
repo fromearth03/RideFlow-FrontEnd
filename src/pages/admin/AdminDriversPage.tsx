@@ -2,10 +2,10 @@ import { useEffect, useState, useCallback } from 'react';
 import { AppLayout } from '@/components/AppLayout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Plus, ToggleLeft, ToggleRight, Loader2, CheckCircle2, Trash2 } from 'lucide-react';
-import { driversApi, authApi, adminApi } from '@/services/api';
+import { driversApi, authApi, adminApi, ridesApi } from '@/services/api';
 import { useToast } from '@/hooks/use-toast';
 import type { BackendDriver, BackendVehicle } from '@/types';
 
@@ -81,9 +81,31 @@ const AdminDriversPage = () => {
   const deleteDriver = async (driverId: number) => {
     try {
       setBusyId(driverId);
+
+      const rides = await ridesApi.getAll();
+      const assignedRides = rides.filter(ride => ride.driverId === driverId && ride.status === 'ASSIGNED');
+
+      if (assignedRides.length > 0) {
+        const cancelResults = await Promise.allSettled(
+          assignedRides.map(ride => ridesApi.updateStatus(ride.id, 'CANCELLED')),
+        );
+
+        const failedCount = cancelResults.filter(result => result.status === 'rejected').length;
+        if (failedCount > 0) {
+          throw new Error(
+            `Could not cancel ${failedCount} assigned ride(s) for this driver. Driver was not deleted.`,
+          );
+        }
+      }
+
       await adminApi.deleteDriver(driverId);
       setDrivers(prev => prev.filter(d => d.id !== driverId));
-      toast({ title: `Driver #${driverId} deleted` });
+      toast({
+        title: `Driver #${driverId} deleted`,
+        description: assignedRides.length > 0
+          ? `${assignedRides.length} assigned ride(s) were moved to CANCELLED first.`
+          : 'No assigned rides required cancellation.',
+      });
     } catch (err: unknown) {
       const e = err as { message?: string };
       toast({ title: 'Delete failed', description: e?.message, variant: 'destructive' });
@@ -110,7 +132,27 @@ const AdminDriversPage = () => {
         throw new Error('Driver account was created, but user ID was not found. Please refresh and try again.');
       }
 
-      await driversApi.create(matchedDriverUser.id, form.licenseNumber);
+      const existingDrivers = await adminApi.getDrivers().catch(() => [] as BackendDriver[]);
+      const profileAlreadyExists = existingDrivers.some(driver => {
+        if ((driver.userId ?? null) === matchedDriverUser.id) return true;
+        if (driver.email && driver.email.toLowerCase() === form.email.toLowerCase()) return true;
+        return false;
+      });
+
+      if (!profileAlreadyExists) {
+        try {
+          await driversApi.create(matchedDriverUser.id, form.licenseNumber);
+        } catch (profileCreateError: unknown) {
+          const duplicateError = profileCreateError as { status?: number; message?: string };
+          const duplicateByStatus = duplicateError?.status === 409;
+          const duplicateByMessage = /already|exist|duplicate/i.test(duplicateError?.message ?? '');
+
+          if (!duplicateByStatus && !duplicateByMessage) {
+            throw profileCreateError;
+          }
+        }
+      }
+
       await load();
 
       toast({
@@ -263,7 +305,12 @@ const AdminDriversPage = () => {
         {/* Add Driver Dialog */}
         <Dialog open={showAdd} onOpenChange={setShowAdd}>
           <DialogContent>
-            <DialogHeader><DialogTitle>Add Driver Account</DialogTitle></DialogHeader>
+            <DialogHeader>
+              <DialogTitle>Add Driver Account</DialogTitle>
+              <DialogDescription>
+                Create a driver account and ensure a single matching driver profile is linked.
+              </DialogDescription>
+            </DialogHeader>
             <div className="space-y-3">
               <p className="text-xs text-muted-foreground">
                 This creates a driver user account. The driver license profile can then be linked via the API with their user ID.

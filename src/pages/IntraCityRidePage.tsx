@@ -1,15 +1,16 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AppLayout } from '@/components/AppLayout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Loader2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
-import { ridesApi, dispatcherApi } from '@/services/api';
+import { ridesApi, dispatcherApi, adminApi } from '@/services/api';
 import { LocationMapPicker } from '@/components/LocationMapPicker';
-import type { ApiError } from '@/types';
+import type { ApiError, BackendCustomer, BackendUser } from '@/types';
 
 const IntraCityRidePage = () => {
   const navigate = useNavigate();
@@ -25,6 +26,50 @@ const IntraCityRidePage = () => {
   });
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [customers, setCustomers] = useState<BackendCustomer[]>([]);
+  const [customerSearch, setCustomerSearch] = useState('');
+  const [selectedCustomerId, setSelectedCustomerId] = useState<string>('');
+  const [customersLoading, setCustomersLoading] = useState(false);
+
+  useEffect(() => {
+    if (!isDispatcher) return;
+
+    const loadCustomers = async () => {
+      try {
+        setCustomersLoading(true);
+        const customerData = await adminApi.getCustomers();
+        setCustomers(customerData);
+      } catch {
+        try {
+          const users = await adminApi.getUsers();
+          const mappedCustomers = users
+            .filter((user: BackendUser) => user.role === 'ROLE_CUSTOMER')
+            .map((user: BackendUser) => ({
+              id: user.id,
+              email: user.email,
+              phoneNumber: null,
+            }));
+          setCustomers(mappedCustomers);
+        } catch {
+          toast({
+            title: 'Customers unavailable',
+            description: 'Could not load customer list. Please refresh or contact admin.',
+            variant: 'destructive',
+          });
+        }
+      } finally {
+        setCustomersLoading(false);
+      }
+    };
+
+    loadCustomers();
+  }, [isDispatcher, toast]);
+
+  const filteredCustomers = useMemo(() => {
+    const keyword = customerSearch.trim().toLowerCase();
+    if (!keyword) return customers;
+    return customers.filter(customer => customer.email.toLowerCase().includes(keyword));
+  }, [customers, customerSearch]);
 
   const update = (field: string) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setForm(f => ({ ...f, [field]: e.target.value }));
@@ -40,6 +85,10 @@ const IntraCityRidePage = () => {
       setErrors({ scheduledDate: 'Date and time are required.' });
       return;
     }
+    if (isDispatcher && !selectedCustomerId) {
+      setErrors({ customerId: 'Please choose a customer before creating a ride.' });
+      return;
+    }
     // Combine to ISO 8601 format required by backend
     const scheduledTime = `${form.scheduledDate}T${form.scheduledTime}:00`;
     const pickupLocation = form.pickup;
@@ -47,7 +96,16 @@ const IntraCityRidePage = () => {
     setLoading(true);
     try {
       if (isDispatcher) {
-        await dispatcherApi.createRide(pickupLocation, dropLocation, scheduledTime, false);
+        const selectedCustomer = customers.find(customer => customer.id === Number(selectedCustomerId));
+        if (!selectedCustomer) {
+          setErrors({ customerId: 'Selected customer is invalid. Please pick again.' });
+          setLoading(false);
+          return;
+        }
+        await dispatcherApi.createRide(pickupLocation, dropLocation, scheduledTime, false, {
+          id: selectedCustomer.id,
+          email: selectedCustomer.email,
+        });
       } else {
         await ridesApi.create(pickupLocation, dropLocation, scheduledTime, false);
       }
@@ -80,6 +138,51 @@ const IntraCityRidePage = () => {
         </p>
 
         <form onSubmit={handleSubmit} className="space-y-5">
+          {isDispatcher && (
+            <div className="space-y-2 rounded-lg border bg-card p-4">
+              <p className="text-sm font-medium text-foreground">Customer Selection</p>
+              <p className="text-xs text-muted-foreground">Search by email and select the customer this booking belongs to.</p>
+              <div>
+                <Label className="text-foreground">Search Customer by Email</Label>
+                <Input
+                  value={customerSearch}
+                  onChange={e => setCustomerSearch(e.target.value)}
+                  placeholder="Type customer email"
+                  className="mt-1"
+                />
+              </div>
+              <div>
+                <Label className="text-foreground">Select Customer</Label>
+                <Select
+                  value={selectedCustomerId}
+                  onValueChange={value => {
+                    setSelectedCustomerId(value);
+                    setErrors(prev => {
+                      const next = { ...prev };
+                      delete next.customerId;
+                      return next;
+                    });
+                  }}
+                >
+                  <SelectTrigger className="mt-1">
+                    <SelectValue placeholder={customersLoading ? 'Loading customers...' : 'Choose customer'} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {filteredCustomers.map(customer => (
+                      <SelectItem key={customer.id} value={String(customer.id)}>
+                        {customer.email}
+                      </SelectItem>
+                    ))}
+                    {!customersLoading && filteredCustomers.length === 0 && (
+                      <SelectItem value="none" disabled>No customers match your search</SelectItem>
+                    )}
+                  </SelectContent>
+                </Select>
+                {errors.customerId && <p className="text-xs text-destructive mt-1">{errors.customerId}</p>}
+              </div>
+            </div>
+          )}
+
           <LocationMapPicker
             label="Pickup Location"
             value={form.pickup}

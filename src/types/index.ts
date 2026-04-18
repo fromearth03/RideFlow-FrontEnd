@@ -6,6 +6,7 @@ export type RideStatus = 'PENDING' | 'ASSIGNED' | 'IN_PROGRESS' | 'COMPLETED' | 
 
 // Auth state stored locally
 export interface AuthUser {
+  id?: number | null;
   email: string;
   role: UserRole;
   approved: boolean;
@@ -37,6 +38,7 @@ export interface BackendDriver {
   approved?: boolean;
   vehicleIds?: number[];
   vehicleModels?: Array<string | null>;
+  vehicleStatuses?: Array<string | null>;
 }
 
 export interface BackendDispatcher {
@@ -81,6 +83,7 @@ export interface AuthResponse {
   token: string;
   role: UserRole;
   approved?: boolean;
+  userId?: number | null;
 }
 
 export interface ApiError {

@@ -27,17 +27,19 @@ const DriverRidesPage = () => {
       if (currentDriver) {
         const dtoVehicleIds = currentDriver.vehicleIds ?? [];
         const dtoVehicleModels = currentDriver.vehicleModels ?? [];
-        const itemCount = Math.max(dtoVehicleIds.length, dtoVehicleModels.length);
+        const dtoVehicleStatuses = currentDriver.vehicleStatuses ?? [];
+        const itemCount = Math.max(dtoVehicleIds.length, dtoVehicleModels.length, dtoVehicleStatuses.length);
 
         const vehicles: BackendVehicle[] = Array.from({ length: itemCount }, (_, index) => {
           const vehicleId = dtoVehicleIds[index] ?? -(index + 1);
           const model = dtoVehicleModels[index]?.trim() ?? '';
+          const status = dtoVehicleStatuses[index]?.trim() ?? 'INACTIVE';
 
           return {
             id: vehicleId,
             plateNumber: dtoVehicleIds[index] ? `Vehicle #${dtoVehicleIds[index]}` : 'Assigned vehicle',
             model,
-            status: 'ACTIVE',
+            status,
           };
         });
 
@@ -59,6 +61,10 @@ const DriverRidesPage = () => {
   }, [loadData]);
 
   const hasAssignedVehicle = assignedVehicles.length > 0;
+  const hasOperableVehicle = assignedVehicles.some(vehicle => {
+    const normalized = (vehicle.status ?? '').trim().toUpperCase();
+    return normalized === 'ACTIVE';
+  });
 
   const requestAssignment = async (rideId: number) => {
     if (!driverId) {
@@ -74,6 +80,15 @@ const DriverRidesPage = () => {
       toast({
         title: 'Vehicle assignment required',
         description: 'You need an assigned vehicle before requesting rides.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    if (!hasOperableVehicle) {
+      toast({
+        title: 'Request blocked',
+        description: 'All your assigned vehicles are inactive/disabled. Contact admin or dispatcher.',
         variant: 'destructive',
       });
       return;
@@ -104,6 +119,11 @@ const DriverRidesPage = () => {
           {!hasAssignedVehicle && (
             <p className="text-xs text-destructive mt-2">
               You cannot request rides until a vehicle is assigned to your driver profile.
+            </p>
+          )}
+          {hasAssignedVehicle && !hasOperableVehicle && (
+            <p className="text-xs text-destructive mt-2">
+              All your assigned vehicles are inactive/disabled, so ride requests are blocked.
             </p>
           )}
         </div>
@@ -146,7 +166,7 @@ const DriverRidesPage = () => {
                           size="sm"
                           variant={requested ? 'outline' : 'default'}
                           onClick={() => requestAssignment(ride.id)}
-                          disabled={!hasAssignedVehicle || requested || requestingRideId === ride.id}
+                          disabled={!hasAssignedVehicle || !hasOperableVehicle || requested || requestingRideId === ride.id}
                         >
                           {requestingRideId === ride.id ? (
                             <Loader2 className="h-4 w-4 mr-1 animate-spin" />

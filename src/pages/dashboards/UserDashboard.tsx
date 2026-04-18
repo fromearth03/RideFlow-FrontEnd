@@ -3,20 +3,31 @@ import { Car, MapPin, Clock, CheckCircle, Loader2 } from 'lucide-react';
 import { StatCard } from '@/components/StatCard';
 import { Button } from '@/components/ui/button';
 import { Link } from 'react-router-dom';
-import { ridesApi } from '@/services/api';
+import { ridesApi, resolveCachedUserIdByEmail } from '@/services/api';
+import { useAuth } from '@/contexts/AuthContext';
 import type { BackendRide } from '@/types';
 
 export const UserDashboard = () => {
+  const { user } = useAuth();
   const [rides, setRides] = useState<BackendRide[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
   useEffect(() => {
-    ridesApi.getAll()
+    const resolvedUserId = user?.id ?? resolveCachedUserIdByEmail(user?.email);
+
+    if (!resolvedUserId) {
+      setRides([]);
+      setError('');
+      setLoading(false);
+      return;
+    }
+
+    ridesApi.getByUserId(resolvedUserId)
       .then(setRides)
       .catch(() => setError('Failed to load rides.'))
       .finally(() => setLoading(false));
-  }, []);
+  }, [user?.id, user?.email]);
 
   const activeRides = rides.filter(r => ['PENDING', 'ASSIGNED', 'IN_PROGRESS'].includes(r.status));
   const completedRides = rides.filter(r => r.status === 'COMPLETED');
