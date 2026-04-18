@@ -1,4 +1,7 @@
-const BLOCKCHAIN_BASE_URL = (import.meta.env.VITE_BLOCKCHAIN_URL as string | undefined)?.trim() || 'http://localhost:8000';
+const configuredBlockchainUrl = (import.meta.env.VITE_BLOCKCHAIN_URL as string | undefined)?.trim();
+const BLOCKCHAIN_BASE_URL = (configuredBlockchainUrl && configuredBlockchainUrl.length > 0
+  ? configuredBlockchainUrl
+  : 'https://blockchain.aliakbar.systems').replace(/\/$/, '');
 
 export interface BlockchainBlock {
   eventtype: string;

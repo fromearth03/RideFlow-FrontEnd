@@ -10,10 +10,10 @@ import type {
 } from '@/types';
 import { safeRecordBlockchainEvent } from '@/services/blockchainAudit';
 
-// Use /api proxy in development, full URL in production
-const BASE_URL = process.env.NODE_ENV === 'production' 
-  ? 'https://api.rideflow.com'
-  : '/api';
+const configuredApiUrl = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.trim();
+const BASE_URL = (configuredApiUrl && configuredApiUrl.length > 0
+  ? configuredApiUrl
+  : 'https://api.aliakbar.systems').replace(/\/$/, '');
 
 // ─── Auth Headers ─────────────────────────────────────────────────────────────
 export function getAuthHeaders(): Record<string, string> {
