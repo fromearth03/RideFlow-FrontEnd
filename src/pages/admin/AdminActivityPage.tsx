@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AppLayout } from '@/components/AppLayout';
-import { Activity, Loader2 } from 'lucide-react';
+import { Activity, Copy, Loader2 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
 import { getBlockchainBlocks, type BlockchainBlock } from '@/services/blockchainAudit';
+import { useToast } from '@/hooks/use-toast';
 
 interface ActivityItem {
   id: string;
@@ -16,12 +17,6 @@ interface ActivityItem {
   previousHash: string;
   currentHash: string;
   searchText: string;
-}
-
-function shortHash(hash: string): string {
-  if (!hash) return '—';
-  if (hash.length <= 18) return hash;
-  return `${hash.slice(0, 10)}…${hash.slice(-8)}`;
 }
 
 function toEventLabel(eventType: string): string {
@@ -94,6 +89,7 @@ function normalizeBlock(block: BlockchainBlock, index: number): ActivityItem {
 }
 
 const AdminActivityPage = () => {
+  const { toast } = useToast();
   const [items, setItems] = useState<ActivityItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -141,6 +137,20 @@ const AdminActivityPage = () => {
       return true;
     });
   }, [items, eventFilter, search, fromDate, toDate]);
+
+  const copyHash = useCallback(async (label: 'Previous' | 'Current', hash: string) => {
+    if (!hash) {
+      toast({ title: `${label} hash not available`, variant: 'destructive' });
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(hash);
+      toast({ title: `${label} hash copied` });
+    } catch {
+      toast({ title: `Failed to copy ${label.toLowerCase()} hash`, variant: 'destructive' });
+    }
+  }, [toast]);
 
   return (
     <AppLayout>
@@ -207,13 +217,35 @@ const AdminActivityPage = () => {
                   <p className="text-xs text-muted-foreground mt-1">
                     {item.userLabel} · {item.timestamp ? new Date(item.timestamp).toLocaleString() : 'Unknown time'}
                   </p>
-                  <div className="mt-2 grid grid-cols-1 gap-1 text-[11px] text-muted-foreground sm:grid-cols-2">
-                    <p className="font-mono" title={item.previousHash || 'No previous hash'}>
-                      Prev: {shortHash(item.previousHash)}
-                    </p>
-                    <p className="font-mono" title={item.currentHash || 'No current hash'}>
-                      Curr: {shortHash(item.currentHash)}
-                    </p>
+                  <div className="mt-2 grid grid-cols-1 gap-2 text-[11px] text-muted-foreground sm:grid-cols-2">
+                    <div className="rounded-md border bg-muted/30 p-2">
+                      <div className="mb-1 flex items-center justify-between gap-2">
+                        <span className="text-[10px] font-semibold uppercase tracking-wide">Previous hash</span>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-6 px-2"
+                          onClick={() => copyHash('Previous', item.previousHash)}
+                        >
+                          <Copy className="mr-1 h-3 w-3" /> Copy
+                        </Button>
+                      </div>
+                      <p className="font-mono break-all">{item.previousHash || '—'}</p>
+                    </div>
+                    <div className="rounded-md border bg-muted/30 p-2">
+                      <div className="mb-1 flex items-center justify-between gap-2">
+                        <span className="text-[10px] font-semibold uppercase tracking-wide">Current hash</span>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-6 px-2"
+                          onClick={() => copyHash('Current', item.currentHash)}
+                        >
+                          <Copy className="mr-1 h-3 w-3" /> Copy
+                        </Button>
+                      </div>
+                      <p className="font-mono break-all">{item.currentHash || '—'}</p>
+                    </div>
                   </div>
                 </div>
               </div>
