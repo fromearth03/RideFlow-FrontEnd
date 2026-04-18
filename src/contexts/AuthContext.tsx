@@ -9,6 +9,7 @@ interface RegisterData {
   role: UserRole;
   licenseNumber?: string;
   adminSecretKey?: string;
+  phone?: string;
 }
 
 interface AuthContextType extends AuthState {
@@ -111,7 +112,7 @@ const AuthProviderInner: React.FC<{ children: React.ReactNode }> = ({ children }
     navigate(getRoleDashboard(data.role), { replace: true });
   }, [navigate]);
 
-  const register = useCallback(async ({ email, password, role, licenseNumber, adminSecretKey }: RegisterData) => {
+  const register = useCallback(async ({ email, password, role, licenseNumber, adminSecretKey, phone }: RegisterData) => {
     let data;
     switch (role) {
       case 'ROLE_DRIVER':
@@ -131,7 +132,7 @@ const AuthProviderInner: React.FC<{ children: React.ReactNode }> = ({ children }
         break;
       case 'ROLE_CUSTOMER':
       default:
-        data = await authApi.registerCustomer(email, password);
+        data = await authApi.registerCustomer(email, password, phone);
         break;
     }
     localStorage.removeItem('token');

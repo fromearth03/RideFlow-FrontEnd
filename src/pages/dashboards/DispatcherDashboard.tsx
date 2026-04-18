@@ -18,6 +18,7 @@ export const DispatcherDashboard = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [typeFilter, setTypeFilter] = useState('all');
   const [assignDialog, setAssignDialog] = useState<BackendRide | null>(null);
   const [requestDialog, setRequestDialog] = useState<BackendRide | null>(null);
   const [selectedDriver, setSelectedDriver] = useState('');
@@ -55,9 +56,15 @@ export const DispatcherDashboard = () => {
   );
 
   const dispatchVisibleRides = rides.filter(ride => ride.status !== 'IN_PROGRESS');
-  const filtered = statusFilter === 'all'
-    ? dispatchVisibleRides
-    : dispatchVisibleRides.filter(r => r.status === statusFilter);
+  let filtered = dispatchVisibleRides;
+  if (statusFilter !== 'all') {
+    filtered = filtered.filter(r => r.status === statusFilter);
+  }
+  if (typeFilter === 'inter-city') {
+    filtered = filtered.filter(r => r.inter_city === true);
+  } else if (typeFilter === 'intra-city') {
+    filtered = filtered.filter(r => r.inter_city === false || r.inter_city === undefined);
+  }
   const pending = rides.filter(r => r.status === 'PENDING').length;
   const active = rides.filter(r => ['ASSIGNED', 'IN_PROGRESS'].includes(r.status)).length;
   const availableDrivers = drivers.filter(d => d.isAvailable && !inProgressDriverIds.has(d.id));
@@ -151,7 +158,7 @@ export const DispatcherDashboard = () => {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-xl font-semibold text-foreground">City-to-City Booking</h1>
+        <h1 className="text-xl font-semibold text-foreground">Dashboard</h1>
         <p className="text-sm text-muted-foreground">Monitor and manage all ride bookings.</p>
       </div>
 
@@ -174,6 +181,16 @@ export const DispatcherDashboard = () => {
             <SelectItem value="ASSIGNED">Assigned</SelectItem>
             <SelectItem value="COMPLETED">Completed</SelectItem>
             <SelectItem value="CANCELLED">Cancelled</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select value={typeFilter} onValueChange={setTypeFilter}>
+          <SelectTrigger className="w-[180px]">
+            <SelectValue placeholder="Filter by type" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Types</SelectItem>
+            <SelectItem value="inter-city">Inter City</SelectItem>
+            <SelectItem value="intra-city">Intra City</SelectItem>
           </SelectContent>
         </Select>
       </div>

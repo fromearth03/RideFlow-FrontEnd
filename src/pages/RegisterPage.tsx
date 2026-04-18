@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Shield, Loader2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { ThemeToggle } from '@/components/ThemeToggle';
 import type { UserRole, ApiError } from '@/types';
 
 const ROLES: { value: UserRole; label: string; description: string }[] = [
@@ -26,6 +27,7 @@ const RegisterPage = () => {
     licenseNumber: '',
     adminSecretKey: '',
     adminSecretFileName: '',
+    phone: '',
   });
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -47,6 +49,10 @@ const RegisterPage = () => {
       setErrors({ adminSecretKey: 'Admin secret key file is required for admin registration.' });
       return;
     }
+    if (form.role === 'ROLE_CUSTOMER' && !form.phone.trim()) {
+      setErrors({ phone: 'Phone number is required for customers.' });
+      return;
+    }
     setLoading(true);
     try {
       await register({
@@ -55,6 +61,7 @@ const RegisterPage = () => {
         role: form.role,
         licenseNumber: form.role === 'ROLE_DRIVER' ? form.licenseNumber.trim() : undefined,
         adminSecretKey: form.role === 'ROLE_ADMIN' ? form.adminSecretKey.trim() : undefined,
+        phone: form.role === 'ROLE_CUSTOMER' ? form.phone.trim() : undefined,
       });
       toast({ title: 'Account created', description: 'Welcome to RideFlow!' });
     } catch (err: unknown) {
@@ -110,7 +117,10 @@ const RegisterPage = () => {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background px-4">
+    <div className="relative flex min-h-screen items-center justify-center bg-background px-4">
+      <div className="absolute right-4 top-4 z-20">
+        <ThemeToggle />
+      </div>
       <div className="w-full max-w-md">
         <div className="flex items-center gap-2 mb-8 justify-center">
           <Shield className="h-6 w-6 text-primary" />
@@ -158,6 +168,21 @@ const RegisterPage = () => {
               <Input type="password" value={form.confirmPassword} onChange={update('confirmPassword')} required className="mt-1" />
               {errors.confirmPassword && <p className="text-xs text-destructive mt-1">{errors.confirmPassword}</p>}
             </div>
+
+            {form.role === 'ROLE_CUSTOMER' && (
+              <div>
+                <Label className="text-card-foreground">Phone Number</Label>
+                <Input
+                  type="tel"
+                  value={form.phone}
+                  onChange={update('phone')}
+                  required
+                  className="mt-1"
+                  placeholder="Enter your phone number"
+                />
+                {errors.phone && <p className="text-xs text-destructive mt-1">{errors.phone}</p>}
+              </div>
+            )}
 
             {form.role === 'ROLE_DRIVER' && (
               <>

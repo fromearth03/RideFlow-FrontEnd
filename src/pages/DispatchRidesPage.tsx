@@ -1,10 +1,5 @@
-import { AppLayout } from '@/components/AppLayout';
-import { DispatcherDashboard } from '@/pages/dashboards/DispatcherDashboard';
+import IntraCityRidePage from '@/pages/IntraCityRidePage';
 
-const DispatchRidesPage = () => (
-  <AppLayout>
-    <DispatcherDashboard />
-  </AppLayout>
-);
+const DispatchRidesPage = () => <IntraCityRidePage />;
 
 export default DispatchRidesPage;

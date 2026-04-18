@@ -11,7 +11,7 @@ import { ridesApi, dispatcherApi } from '@/services/api';
 import { LocationMapPicker } from '@/components/LocationMapPicker';
 import type { ApiError } from '@/types';
 
-const CreateRidePage = () => {
+const IntraCityRidePage = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
   const { user } = useAuth();
@@ -40,15 +40,16 @@ const CreateRidePage = () => {
       setErrors({ scheduledDate: 'Date and time are required.' });
       return;
     }
+    // Combine to ISO 8601 format required by backend
     const scheduledTime = `${form.scheduledDate}T${form.scheduledTime}:00`;
     const pickupLocation = form.pickup;
     const dropLocation = form.dropoff;
     setLoading(true);
     try {
       if (isDispatcher) {
-        await dispatcherApi.createRide(pickupLocation, dropLocation, scheduledTime, true);
+        await dispatcherApi.createRide(pickupLocation, dropLocation, scheduledTime, false);
       } else {
-        await ridesApi.create(pickupLocation, dropLocation, scheduledTime, true);
+        await ridesApi.create(pickupLocation, dropLocation, scheduledTime, false);
       }
       toast({ title: 'Ride created', description: 'Your booking has been submitted successfully.' });
       navigate(isDispatcher ? '/dashboard' : '/rides');
@@ -72,10 +73,10 @@ const CreateRidePage = () => {
     <AppLayout>
       <div className="max-w-2xl">
         <h1 className="text-xl font-semibold text-foreground mb-1">
-          {isDispatcher ? 'Inter City Ride' : 'Book a Ride'}
+          Intra City Ride
         </h1>
         <p className="text-sm text-muted-foreground mb-6">
-          {isDispatcher ? 'Create an inter-city booking on behalf of a customer.' : 'Request a long-distance ride.'}
+          Create an intra-city booking on behalf of a customer.
         </p>
 
         <form onSubmit={handleSubmit} className="space-y-5">
@@ -121,4 +122,4 @@ const CreateRidePage = () => {
   );
 };
 
-export default CreateRidePage;
+export default IntraCityRidePage;

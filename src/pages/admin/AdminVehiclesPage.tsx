@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Plus, Wrench, Loader2, Link2, UserMinus, Ban, CheckCircle2 } from 'lucide-react';
+import { Plus, Wrench, Loader2, Link2, UserMinus, Ban, CheckCircle2, Trash2 } from 'lucide-react';
 import { adminApi, driversApi } from '@/services/api';
 import { useToast } from '@/hooks/use-toast';
 import type { BackendVehicle, BackendDriver } from '@/types';
@@ -22,6 +22,7 @@ const AdminVehiclesPage = () => {
   const [assignLoading, setAssignLoading] = useState(false);
   const [unassignLoadingId, setUnassignLoadingId] = useState<number | null>(null);
   const [disableLoadingId, setDisableLoadingId] = useState<number | null>(null);
+  const [deleteLoadingId, setDeleteLoadingId] = useState<number | null>(null);
   const [addForm, setAddForm] = useState({ plateNumber: '', model: '', status: 'ACTIVE' });
   const [assignForm, setAssignForm] = useState({ vehicleId: '', driverId: '' });
   const [maintDesc, setMaintDesc] = useState('');
@@ -75,11 +76,23 @@ const AdminVehiclesPage = () => {
       return;
     }
 
+    const selectedDriverId = Number(assignForm.driverId);
+    const selectedVehicleId = Number(assignForm.vehicleId);
+    const selectedVehicle = vehicles.find(vehicle => vehicle.id === selectedVehicleId);
+
+    // Check if vehicle is already assigned to a driver
+    const assignedDriverId = getAssignedDriverId(selectedVehicle!);
+    if (assignedDriverId) {
+      toast({
+        title: 'Vehicle already assigned',
+        description: `This vehicle is already assigned to a driver. Unassign it first.`,
+        variant: 'destructive',
+      });
+      return;
+    }
+
     try {
       setAssignLoading(true);
-      const selectedDriverId = Number(assignForm.driverId);
-      const selectedVehicleId = Number(assignForm.vehicleId);
-      const selectedVehicle = vehicles.find(vehicle => vehicle.id === selectedVehicleId);
       const selectedDriver = drivers.find(driver => driver.id === selectedDriverId);
 
       await adminApi.assignVehicleToDriver(selectedDriverId, selectedVehicleId);
@@ -144,6 +157,27 @@ const AdminVehiclesPage = () => {
       });
     } finally {
       setUnassignLoadingId(null);
+    }
+  };
+
+  const handleDelete = async (vehicle: BackendVehicle) => {
+    try {
+      setDeleteLoadingId(vehicle.id);
+      await adminApi.deleteVehicle(vehicle.id);
+      setVehicles(prev => prev.filter(v => v.id !== vehicle.id));
+      toast({
+        title: 'Vehicle deleted',
+        description: `${vehicle.plateNumber} has been deleted.`,
+      });
+    } catch (err: unknown) {
+      const e = err as { message?: string };
+      toast({
+        title: 'Delete failed',
+        description: e?.message || 'Could not delete vehicle.',
+        variant: 'destructive',
+      });
+    } finally {
+      setDeleteLoadingId(null);
     }
   };
 
@@ -238,7 +272,7 @@ const AdminVehiclesPage = () => {
 
     const assignedDriverId = getAssignedDriverId(vehicle);
     const assignedById = assignedDriverId
-      ? drivers.find(driver => driver.id === assignedDriverId || (driver.userId ?? null) === assignedDriverId)
+      ? drivers.find(driver => driver.id === assignedDriverId) || drivers.find(driver => (driver.userId ?? null) === assignedDriverId)
       : null;
 
     if (assignedById?.licenseNumber) {
@@ -359,19 +393,28 @@ const AdminVehiclesPage = () => {
                           <><Ban className="h-3 w-3 mr-1" />Disable</>
                         )}
                       </Button>
-                      {getAssignedDriverId(v) && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="ml-1"
-                          onClick={() => handleUnassign(v)}
-                          disabled={unassignLoadingId === v.id}
-                        >
-                          {unassignLoadingId === v.id
-                            ? <Loader2 className="h-3 w-3 animate-spin" />
-                            : <><UserMinus className="h-3 w-3 mr-1" />Unassign</>}
-                        </Button>
-                      )}
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="ml-1"
+                        onClick={() => handleUnassign(v)}
+                        disabled={unassignLoadingId === v.id}
+                      >
+                        {unassignLoadingId === v.id
+                          ? <Loader2 className="h-3 w-3 animate-spin" />
+                          : <><UserMinus className="h-3 w-3 mr-1" />Unassign</>}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        className="ml-1"
+                        onClick={() => handleDelete(v)}
+                        disabled={deleteLoadingId === v.id}
+                      >
+                        {deleteLoadingId === v.id
+                          ? <Loader2 className="h-3 w-3 animate-spin" />
+                          : <><Trash2 className="h-3 w-3 mr-1" />Delete</>}
+                      </Button>
                     </td>
                   </tr>
                 ))}

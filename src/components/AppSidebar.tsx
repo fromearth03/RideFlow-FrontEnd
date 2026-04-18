@@ -21,10 +21,11 @@ interface NavItem {
 const navItems: NavItem[] = [
   { title: 'Dashboard', url: '/dashboard', icon: LayoutDashboard, roles: ['ROLE_CUSTOMER', 'ROLE_DRIVER', 'ROLE_DISPATCHER', 'ROLE_ADMIN'] },
   { title: 'Book a Ride', url: '/rides/new', icon: MapPin, roles: ['ROLE_CUSTOMER'] },
+  { title: 'Intra City Ride', url: '/rides/intra', icon: MapPin, roles: ['ROLE_CUSTOMER'] },
   { title: 'My Rides', url: '/rides', icon: Car, roles: ['ROLE_CUSTOMER'] },
   { title: 'Incoming Rides', url: '/driver/rides', icon: ClipboardList, roles: ['ROLE_DRIVER'] },
   { title: 'City-to-City Booking', url: '/dispatch/rides', icon: Headphones, roles: ['ROLE_DISPATCHER'] },
-  { title: 'Create City Booking', url: '/dispatch/rides/new', icon: MapPin, roles: ['ROLE_DISPATCHER'] },
+  { title: 'Create Booking', url: '/dispatch/rides/new', icon: MapPin, roles: ['ROLE_DISPATCHER'] },
   { title: 'All Rides', url: '/admin/rides', icon: Car, roles: ['ROLE_ADMIN'] },
   { title: 'Drivers', url: '/admin/drivers', icon: UserCircle, roles: ['ROLE_ADMIN'] },
   { title: 'Dispatchers', url: '/admin/dispatchers', icon: Headphones, roles: ['ROLE_ADMIN'] },

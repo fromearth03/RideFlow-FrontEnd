@@ -8,6 +8,7 @@ import type {
   BackendDispatcher,
   BackendCustomer,
 } from '@/types';
+import { safeRecordBlockchainEvent } from '@/services/blockchainAudit';
 
 // Use /api proxy in development, full URL in production
 const BASE_URL = process.env.NODE_ENV === 'production' 
@@ -358,17 +359,28 @@ export const authApi = {
       body: JSON.stringify({ email, password }),
     });
     const data = await handleResponse<unknown>(res);
-    return normalizeAuthResponse(data);
+    const normalized = normalizeAuthResponse(data);
+    await safeRecordBlockchainEvent('USER_SIGN_IN', {
+      email,
+      role: normalized.role,
+    });
+    return normalized;
   },
 
-  registerCustomer: async (email: string, password: string): Promise<AuthResponse> => {
+  registerCustomer: async (email: string, password: string, phone?: string): Promise<AuthResponse> => {
     const res = await fetch(`${BASE_URL}/auth/register`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify({ email, password, phone }),
     });
     const data = await handleResponse<unknown>(res);
-    return normalizeAuthResponse(data);
+    const normalized = normalizeAuthResponse(data);
+    await safeRecordBlockchainEvent('USER_REGISTER', {
+      email,
+      role: normalized.role,
+      phone: phone ?? null,
+    });
+    return normalized;
   },
 
   registerDriver: async (email: string, password: string, licenseNumber: string): Promise<AuthResponse> => {
@@ -385,7 +397,13 @@ export const authApi = {
       }),
     });
     const data = await handleResponse<unknown>(res);
-    return normalizeAuthResponse(data);
+    const normalized = normalizeAuthResponse(data);
+    await safeRecordBlockchainEvent('DRIVER_ADD', {
+      email,
+      role: normalized.role,
+      licenseNumber,
+    });
+    return normalized;
   },
 
   registerDispatcher: async (email: string, password: string): Promise<AuthResponse> => {
@@ -398,7 +416,12 @@ export const authApi = {
       body: JSON.stringify({ email, password }),
     });
     const data = await handleResponse<unknown>(res);
-    return normalizeAuthResponse(data);
+    const normalized = normalizeAuthResponse(data);
+    await safeRecordBlockchainEvent('DISPATCHER_ADD', {
+      email,
+      role: normalized.role,
+    });
+    return normalized;
   },
 
   registerAdmin: async (email: string, password: string, adminSecretKey: string): Promise<AuthResponse> => {
@@ -412,7 +435,13 @@ export const authApi = {
       body: JSON.stringify({ email, password }),
     });
     const data = await handleResponse<unknown>(res);
-    return normalizeAuthResponse(data);
+    const normalized = normalizeAuthResponse(data);
+    await safeRecordBlockchainEvent('USER_REGISTER', {
+      email,
+      role: normalized.role,
+      adminSecretKeyPresent: Boolean(adminSecretKey),
+    });
+    return normalized;
   },
 };
 
@@ -423,13 +452,21 @@ export const ridesApi = {
     return handleResponse<BackendRide[]>(res);
   },
 
-  create: async (pickupLocation: string, dropLocation: string, scheduledTime: string): Promise<BackendRide> => {
+  create: async (pickupLocation: string, dropLocation: string, scheduledTime: string, inter_city?: boolean): Promise<BackendRide> => {
     const res = await fetch(`${BASE_URL}/rides`, {
       method: 'POST',
       headers: getAuthHeaders(),
-      body: JSON.stringify({ pickupLocation, dropLocation, scheduledTime }),
+      body: JSON.stringify({ pickupLocation, dropLocation, scheduledTime, inter_city }),
     });
-    return handleResponse<BackendRide>(res);
+    const ride = await handleResponse<BackendRide>(res);
+    await safeRecordBlockchainEvent('RIDE_CREATE', {
+      rideId: ride.id,
+      pickupLocation,
+      dropLocation,
+      scheduledTime,
+      inter_city: inter_city ?? null,
+    });
+    return ride;
   },
 
   assignDriver: async (rideId: number, driverId: number): Promise<BackendRide> => {
@@ -437,7 +474,12 @@ export const ridesApi = {
       method: 'POST',
       headers: getAuthHeaders(),
     });
-    return handleResponse<BackendRide>(res);
+    const ride = await handleResponse<BackendRide>(res);
+    await safeRecordBlockchainEvent('RIDE_ASSIGN_DRIVER', {
+      rideId,
+      driverId,
+    });
+    return ride;
   },
 
   updateStatus: async (rideId: number, status: string): Promise<BackendRide> => {
@@ -445,7 +487,13 @@ export const ridesApi = {
       method: 'PATCH',
       headers: getAuthHeaders(),
     });
-    return handleResponse<BackendRide>(res);
+    const ride = await handleResponse<BackendRide>(res);
+    const eventType = status === 'CANCELLED' ? 'RIDE_CANCEL' : 'RIDE_STATUS_UPDATE';
+    await safeRecordBlockchainEvent(eventType, {
+      rideId,
+      status,
+    });
+    return ride;
   },
 };
 
@@ -465,7 +513,13 @@ export const driversApi = {
       headers: getAuthHeaders(),
       body: JSON.stringify({ userId, licenseNumber }),
     });
-    return handleResponse<BackendDriver>(res);
+    const driver = await handleResponse<BackendDriver>(res);
+    await safeRecordBlockchainEvent('DRIVER_PROFILE_CREATE', {
+      driverId: driver.id,
+      userId,
+      licenseNumber,
+    });
+    return driver;
   },
 
   toggleAvailability: async (driverId: number, available: boolean): Promise<BackendDriver> => {
@@ -500,13 +554,22 @@ export const driversApi = {
 
 // ─── Dispatcher API ───────────────────────────────────────────────────────────
 export const dispatcherApi = {
-  createRide: async (pickupLocation: string, dropLocation: string, scheduledTime: string): Promise<BackendRide> => {
+  createRide: async (pickupLocation: string, dropLocation: string, scheduledTime: string, inter_city: boolean): Promise<BackendRide> => {
     const res = await fetch(`${BASE_URL}/dispatcher/rides`, {
       method: 'POST',
       headers: getAuthHeaders(),
-      body: JSON.stringify({ pickupLocation, dropLocation, scheduledTime }),
+      body: JSON.stringify({ pickupLocation, dropLocation, scheduledTime, inter_city }),
     });
-    return handleResponse<BackendRide>(res);
+    const ride = await handleResponse<BackendRide>(res);
+    await safeRecordBlockchainEvent('RIDE_CREATE', {
+      rideId: ride.id,
+      pickupLocation,
+      dropLocation,
+      scheduledTime,
+      inter_city,
+      source: 'dispatcher',
+    });
+    return ride;
   },
 
   assignDriver: async (rideId: number, driverId: number): Promise<BackendRide> => {
@@ -514,7 +577,13 @@ export const dispatcherApi = {
       method: 'POST',
       headers: getAuthHeaders(),
     });
-    return handleResponse<BackendRide>(res);
+    const ride = await handleResponse<BackendRide>(res);
+    await safeRecordBlockchainEvent('RIDE_ASSIGN_DRIVER', {
+      rideId,
+      driverId,
+      source: 'dispatcher',
+    });
+    return ride;
   },
 
   autoAssign: async (rideId: number): Promise<BackendRide> => {
@@ -538,7 +607,11 @@ export const adminApi = {
       method: 'DELETE',
       headers: getAuthHeaders(),
     });
-    return handleResponse<void>(res);
+    const response = await handleResponse<void>(res);
+    await safeRecordBlockchainEvent('USER_DELETE', {
+      userId: id,
+    });
+    return response;
   },
 
   getDrivers: async (): Promise<BackendDriver[]> => {
@@ -554,7 +627,11 @@ export const adminApi = {
       method: 'DELETE',
       headers: getAuthHeaders(),
     });
-    return handleResponse<void>(res);
+    const response = await handleResponse<void>(res);
+    await safeRecordBlockchainEvent('DRIVER_DELETE', {
+      driverId: id,
+    });
+    return response;
   },
 
   approveDriver: async (id: number): Promise<BackendDriver> => {
@@ -563,7 +640,11 @@ export const adminApi = {
       headers: getAuthHeaders(),
     });
     const data = await handleResponse<unknown>(res);
-    return normalizeDriver(data);
+    const driver = normalizeDriver(data);
+    await safeRecordBlockchainEvent('DRIVER_APPROVE', {
+      driverId: id,
+    });
+    return driver;
   },
 
   getDispatchers: async (): Promise<BackendDispatcher[]> => {
@@ -576,7 +657,11 @@ export const adminApi = {
       method: 'DELETE',
       headers: getAuthHeaders(),
     });
-    return handleResponse<void>(res);
+    const response = await handleResponse<void>(res);
+    await safeRecordBlockchainEvent('DISPATCHER_DELETE', {
+      dispatcherId: id,
+    });
+    return response;
   },
 
   approveDispatcher: async (id: number): Promise<BackendDispatcher> => {
@@ -584,7 +669,11 @@ export const adminApi = {
       method: 'PATCH',
       headers: getAuthHeaders(),
     });
-    return handleResponse<BackendDispatcher>(res);
+    const dispatcher = await handleResponse<BackendDispatcher>(res);
+    await safeRecordBlockchainEvent('DISPATCHER_APPROVE', {
+      dispatcherId: id,
+    });
+    return dispatcher;
   },
 
   getCustomers: async (): Promise<BackendCustomer[]> => {
@@ -597,7 +686,11 @@ export const adminApi = {
       method: 'DELETE',
       headers: getAuthHeaders(),
     });
-    return handleResponse<void>(res);
+    const response = await handleResponse<void>(res);
+    await safeRecordBlockchainEvent('CUSTOMER_DELETE', {
+      customerId: id,
+    });
+    return response;
   },
 
   getVehicles: async (): Promise<BackendVehicle[]> => {
@@ -614,7 +707,14 @@ export const adminApi = {
       headers: getAuthHeaders(),
       body: JSON.stringify({ plateNumber, model, status }),
     });
-    return handleResponse<BackendVehicle>(res);
+    const vehicle = await handleResponse<BackendVehicle>(res);
+    await safeRecordBlockchainEvent('VEHICLE_ADD', {
+      vehicleId: vehicle.id,
+      plateNumber,
+      model,
+      status,
+    });
+    return vehicle;
   },
 
   disableVehicle: async (vehicleId: number): Promise<BackendVehicle> => {
@@ -623,7 +723,11 @@ export const adminApi = {
       headers: getAuthHeaders(),
     });
     const data = await handleResponse<unknown>(res);
-    return normalizeVehicle(data);
+    const vehicle = normalizeVehicle(data);
+    await safeRecordBlockchainEvent('VEHICLE_DISABLE', {
+      vehicleId,
+    });
+    return vehicle;
   },
 
   enableVehicle: async (vehicleId: number): Promise<BackendVehicle> => {
@@ -632,7 +736,11 @@ export const adminApi = {
       headers: getAuthHeaders(),
     });
     const data = await handleResponse<unknown>(res);
-    return normalizeVehicle(data);
+    const vehicle = normalizeVehicle(data);
+    await safeRecordBlockchainEvent('VEHICLE_ENABLE', {
+      vehicleId,
+    });
+    return vehicle;
   },
 
   addMaintenance: async (vehicleId: number, description: string): Promise<BackendMaintenanceRecord> => {
@@ -641,7 +749,13 @@ export const adminApi = {
       headers: getAuthHeaders(),
       body: JSON.stringify({ description }),
     });
-    return handleResponse<BackendMaintenanceRecord>(res);
+    const maintenance = await handleResponse<BackendMaintenanceRecord>(res);
+    await safeRecordBlockchainEvent('VEHICLE_MAINTENANCE', {
+      vehicleId,
+      description,
+      maintenanceId: maintenance.id,
+    });
+    return maintenance;
   },
 
   assignVehicleToDriver: async (driverId: number, vehicleId: number): Promise<BackendVehicle> => {
@@ -656,7 +770,12 @@ export const adminApi = {
       }),
     ]);
 
-    return normalizeVehicle(data);
+    const vehicle = normalizeVehicle(data);
+    await safeRecordBlockchainEvent('VEHICLE_ASSIGN', {
+      vehicleId,
+      driverId,
+    });
+    return vehicle;
   },
 
   unassignVehicleFromDriver: async (driverId: number, vehicleId: number): Promise<void> => {
@@ -671,7 +790,23 @@ export const adminApi = {
       }),
     ]);
 
+    await safeRecordBlockchainEvent('VEHICLE_UNASSIGN', {
+      vehicleId,
+      driverId,
+    });
     return data as void;
+  },
+
+  deleteVehicle: async (vehicleId: number): Promise<void> => {
+    const res = await fetch(`${BASE_URL}/admin/vehicles/${vehicleId}`, {
+      method: 'DELETE',
+      headers: getAuthHeaders(),
+    });
+    const response = await handleResponse<void>(res);
+    await safeRecordBlockchainEvent('VEHICLE_DELETE', {
+      vehicleId,
+    });
+    return response;
   },
 
   assignVehicleToDriverByPlate: async (plateNumber: string, driverId: number): Promise<BackendVehicle> => {

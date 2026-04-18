@@ -6,16 +6,13 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Loader2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { useAuth } from '@/contexts/AuthContext';
-import { ridesApi, dispatcherApi } from '@/services/api';
+import { ridesApi } from '@/services/api';
 import { LocationMapPicker } from '@/components/LocationMapPicker';
 import type { ApiError } from '@/types';
 
-const CreateRidePage = () => {
+const IntraCityCustomerPage = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { user } = useAuth();
-  const isDispatcher = user?.role === 'ROLE_DISPATCHER';
 
   const [form, setForm] = useState({
     pickup: '',
@@ -40,18 +37,15 @@ const CreateRidePage = () => {
       setErrors({ scheduledDate: 'Date and time are required.' });
       return;
     }
+    // Combine to ISO 8601 format required by backend
     const scheduledTime = `${form.scheduledDate}T${form.scheduledTime}:00`;
     const pickupLocation = form.pickup;
     const dropLocation = form.dropoff;
     setLoading(true);
     try {
-      if (isDispatcher) {
-        await dispatcherApi.createRide(pickupLocation, dropLocation, scheduledTime, true);
-      } else {
-        await ridesApi.create(pickupLocation, dropLocation, scheduledTime, true);
-      }
+      await ridesApi.create(pickupLocation, dropLocation, scheduledTime, false);
       toast({ title: 'Ride created', description: 'Your booking has been submitted successfully.' });
-      navigate(isDispatcher ? '/dashboard' : '/rides');
+      navigate('/rides');
     } catch (err: unknown) {
       const apiErr = err as ApiError;
       if (apiErr?.errors) {
@@ -72,10 +66,10 @@ const CreateRidePage = () => {
     <AppLayout>
       <div className="max-w-2xl">
         <h1 className="text-xl font-semibold text-foreground mb-1">
-          {isDispatcher ? 'Inter City Ride' : 'Book a Ride'}
+          Intra City Ride
         </h1>
         <p className="text-sm text-muted-foreground mb-6">
-          {isDispatcher ? 'Create an inter-city booking on behalf of a customer.' : 'Request a long-distance ride.'}
+          Request an intra-city ride.
         </p>
 
         <form onSubmit={handleSubmit} className="space-y-5">
@@ -121,4 +115,4 @@ const CreateRidePage = () => {
   );
 };
 
-export default CreateRidePage;
+export default IntraCityCustomerPage;

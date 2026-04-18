@@ -25,6 +25,7 @@ export interface BackendRide {
   dropLocation: string;
   status: RideStatus;
   driverId: number | null;
+  inter_city?: boolean;
 }
 
 export interface BackendDriver {

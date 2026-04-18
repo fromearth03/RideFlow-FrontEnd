@@ -11,6 +11,7 @@ import LoginPage from "./pages/LoginPage";
 import RegisterPage from "./pages/RegisterPage";
 import DashboardPage from "./pages/DashboardPage";
 import CreateRidePage from "./pages/CreateRidePage";
+import IntraCityCustomerPage from "./pages/IntraCityCustomerPage";
 import UserRidesPage from "./pages/UserRidesPage";
 import DriverRidesPage from "./pages/DriverRidesPage";
 import DispatchRidesPage from "./pages/DispatchRidesPage";
@@ -51,6 +52,7 @@ const App = () => (
             {/* Customer routes */}
             <Route path="/rides" element={<ProtectedRoute roles={['ROLE_CUSTOMER']}><UserRidesPage /></ProtectedRoute>} />
             <Route path="/rides/new" element={<ProtectedRoute roles={['ROLE_CUSTOMER']}><CreateRidePage /></ProtectedRoute>} />
+            <Route path="/rides/intra" element={<ProtectedRoute roles={['ROLE_CUSTOMER']}><IntraCityCustomerPage /></ProtectedRoute>} />
 
             {/* Driver routes */}
             <Route path="/driver/rides" element={<ProtectedRoute roles={['ROLE_DRIVER']}><DriverRidesPage /></ProtectedRoute>} />

@@ -4,8 +4,10 @@ import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Shield, Loader2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { RideFlowLogo } from '@/components/RideFlowLogo';
+import { ThemeToggle } from '@/components/ThemeToggle';
 import type { ApiError } from '@/types';
 
 const LoginPage = () => {
@@ -75,14 +77,14 @@ const LoginPage = () => {
   };
 
   return (
-    <div className="flex min-h-screen">
+    <div className="relative flex min-h-screen">
+      <div className="absolute right-4 top-4 z-20">
+        <ThemeToggle />
+      </div>
       {/* Left panel */}
       <div className="hidden lg:flex lg:w-1/2 flex-col justify-center px-16 bg-[hsl(220,25%,12%)]">
         <div className="flex items-center gap-3 mb-8">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary">
-            <Shield className="h-5 w-5 text-primary-foreground" />
-          </div>
-          <span className="text-2xl font-bold text-white">RideFlow</span>
+          <RideFlowLogo textClassName="text-2xl text-white" />
         </div>
         <h1 className="text-3xl font-bold leading-tight mb-4 text-white">
           Private Long-Distance<br />Cab Booking Platform
@@ -97,8 +99,7 @@ const LoginPage = () => {
       <div className="flex flex-1 flex-col justify-center px-8 sm:px-16 lg:px-24 bg-background">
         <div className="w-full max-w-sm mx-auto">
           <div className="lg:hidden flex items-center gap-2 mb-8">
-            <Shield className="h-6 w-6 text-primary" />
-            <span className="text-xl font-bold text-foreground">RideFlow</span>
+            <RideFlowLogo iconWrapClassName="h-9 w-9" iconClassName="h-4 w-4" />
           </div>
 
           <h2 className="text-xl font-semibold text-foreground mb-1">Sign in</h2>

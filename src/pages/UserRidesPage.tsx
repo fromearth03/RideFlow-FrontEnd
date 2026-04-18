@@ -2,11 +2,13 @@ import { useEffect, useState, useCallback } from 'react';
 import { AppLayout } from '@/components/AppLayout';
 import { Button } from '@/components/ui/button';
 import { Link } from 'react-router-dom';
-import { Plus, Loader2 } from 'lucide-react';
+import { Plus, Loader2, X } from 'lucide-react';
 import { ridesApi } from '@/services/api';
+import { useToast } from '@/hooks/use-toast';
 import type { BackendRide } from '@/types';
 
 const UserRidesPage = () => {
+  const { toast } = useToast();
   const [rides, setRides] = useState<BackendRide[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -21,6 +23,16 @@ const UserRidesPage = () => {
       setLoading(false);
     }
   }, []);
+
+  const cancelRide = async (rideId: number) => {
+    try {
+      await ridesApi.updateStatus(rideId, 'CANCELLED');
+      setRides(prev => prev.map(r => r.id === rideId ? { ...r, status: 'CANCELLED' } : r));
+      toast({ title: 'Ride cancelled', description: 'Your ride has been cancelled successfully.' });
+    } catch {
+      toast({ title: 'Cancellation failed', description: 'Could not cancel the ride.', variant: 'destructive' });
+    }
+  };
 
   useEffect(() => { load(); }, [load]);
 
@@ -54,6 +66,7 @@ const UserRidesPage = () => {
                   <th>Drop-off</th>
                   <th>Status</th>
                   <th>Driver</th>
+                  <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -68,11 +81,18 @@ const UserRidesPage = () => {
                       </span>
                     </td>
                     <td className="text-muted-foreground">{r.driverId ? `#${r.driverId}` : '—'}</td>
+                    <td>
+                      {['PENDING', 'ASSIGNED'].includes(r.status) && (
+                        <Button size="sm" variant="ghost" className="text-destructive" onClick={() => cancelRide(r.id)}>
+                          <X className="h-3 w-3 mr-1" /> Cancel
+                        </Button>
+                      )}
+                    </td>
                   </tr>
                 ))}
                 {rides.length === 0 && (
                   <tr>
-                    <td colSpan={5} className="text-center text-muted-foreground py-6">
+                    <td colSpan={6} className="text-center text-muted-foreground py-6">
                       No rides yet.{' '}
                       <Link to="/rides/new" className="text-primary hover:underline">Book your first ride!</Link>
                     </td>
