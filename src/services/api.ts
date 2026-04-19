@@ -13,7 +13,7 @@ import { safeRecordBlockchainEvent } from '@/services/blockchainAudit';
 const configuredApiUrl = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.trim();
 const BASE_URL = (configuredApiUrl && configuredApiUrl.length > 0
   ? configuredApiUrl
-  : 'http://localhost:8080').replace(/\/$/, '');
+  : 'https://api.aliakbar.systems').replace(/\/$/, '');
 const USER_ID_BY_EMAIL_STORAGE_KEY = 'rideflow:userIdByEmail';
 
 function normalizeEmailKey(email: string): string {
