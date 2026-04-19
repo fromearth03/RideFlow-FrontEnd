@@ -49,6 +49,7 @@ export interface BackendDispatcher {
 
 export interface BackendCustomer {
   id: number;
+  userId?: number | null;
   email: string;
   phoneNumber?: string | null;
 }

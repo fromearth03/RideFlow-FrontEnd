@@ -171,24 +171,35 @@ const AdminActivityPage = () => {
             value={search}
             onChange={event => setSearch(event.target.value)}
             placeholder="Search by keyword, email, ride, vehicle..."
+            className="text-black dark:text-foreground placeholder:text-black/60 dark:placeholder:text-foreground/60"
           />
 
           <Select value={eventFilter} onValueChange={setEventFilter}>
-            <SelectTrigger>
+            <SelectTrigger className="text-black dark:text-foreground">
               <SelectValue placeholder="All event types" />
             </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All event types</SelectItem>
+            <SelectContent className="text-black dark:text-foreground">
+              <SelectItem value="all" className="text-black dark:text-foreground">All event types</SelectItem>
               {eventTypes.map(eventType => (
-                <SelectItem key={eventType} value={eventType}>
+                <SelectItem key={eventType} value={eventType} className="text-black dark:text-foreground">
                   {toEventLabel(eventType)}
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
 
-          <Input type="date" value={fromDate} onChange={event => setFromDate(event.target.value)} />
-          <Input type="date" value={toDate} onChange={event => setToDate(event.target.value)} />
+          <Input
+            type="date"
+            value={fromDate}
+            onChange={event => setFromDate(event.target.value)}
+            className="text-black dark:text-foreground [color-scheme:light] dark:[color-scheme:dark]"
+          />
+          <Input
+            type="date"
+            value={toDate}
+            onChange={event => setToDate(event.target.value)}
+            className="text-black dark:text-foreground [color-scheme:light] dark:[color-scheme:dark]"
+          />
         </div>
 
         {loading && (

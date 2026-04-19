@@ -8,9 +8,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Loader2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
-import { ridesApi, dispatcherApi, adminApi } from '@/services/api';
+import { ridesApi, dispatcherApi } from '@/services/api';
 import { LocationMapPicker } from '@/components/LocationMapPicker';
-import type { ApiError, BackendCustomer, BackendUser } from '@/types';
+import type { ApiError, BackendCustomer } from '@/types';
 
 const CreateRidePage = () => {
   const navigate = useNavigate();
@@ -28,7 +28,7 @@ const CreateRidePage = () => {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [customers, setCustomers] = useState<BackendCustomer[]>([]);
   const [customerSearch, setCustomerSearch] = useState('');
-  const [selectedCustomerId, setSelectedCustomerId] = useState<string>('');
+  const [selectedCustomerUserId, setSelectedCustomerUserId] = useState<string>('');
   const [customersLoading, setCustomersLoading] = useState(false);
 
   useEffect(() => {
@@ -37,26 +37,14 @@ const CreateRidePage = () => {
     const loadCustomers = async () => {
       try {
         setCustomersLoading(true);
-        const customerData = await adminApi.getCustomers();
+        const customerData = await dispatcherApi.getCustomers();
         setCustomers(customerData);
       } catch {
-        try {
-          const users = await adminApi.getUsers();
-          const mappedCustomers = users
-            .filter((user: BackendUser) => user.role === 'ROLE_CUSTOMER')
-            .map((user: BackendUser) => ({
-              id: user.id,
-              email: user.email,
-              phoneNumber: null,
-            }));
-          setCustomers(mappedCustomers);
-        } catch {
-          toast({
-            title: 'Customers unavailable',
-            description: 'Could not load customer list. Please refresh or contact admin.',
-            variant: 'destructive',
-          });
-        }
+        toast({
+          title: 'Customers unavailable',
+          description: 'Could not load customer list from /customers endpoint.',
+          variant: 'destructive',
+        });
       } finally {
         setCustomersLoading(false);
       }
@@ -85,7 +73,7 @@ const CreateRidePage = () => {
       setErrors({ scheduledDate: 'Date and time are required.' });
       return;
     }
-    if (isDispatcher && !selectedCustomerId) {
+    if (isDispatcher && !selectedCustomerUserId) {
       setErrors({ customerId: 'Please choose a customer before creating a ride.' });
       return;
     }
@@ -95,16 +83,23 @@ const CreateRidePage = () => {
     setLoading(true);
     try {
       if (isDispatcher) {
-        const selectedCustomer = customers.find(customer => customer.id === Number(selectedCustomerId));
+        const parsedSelectedCustomerUserId = Number(selectedCustomerUserId);
+        const selectedCustomer = customers.find(customer => (customer.userId ?? customer.id) === parsedSelectedCustomerUserId);
         if (!selectedCustomer) {
           setErrors({ customerId: 'Selected customer is invalid. Please pick again.' });
           setLoading(false);
           return;
         }
-        await dispatcherApi.createRide(pickupLocation, dropLocation, scheduledTime, true, {
-          id: selectedCustomer.id,
-          email: selectedCustomer.email,
-        });
+
+        if (user?.id && parsedSelectedCustomerUserId === user.id) {
+          setErrors({ customerId: 'Invalid customer selection. Please choose a customer account.' });
+          setLoading(false);
+          return;
+        }
+
+        console.log('[Dispatcher Submit] selectedCustomerUserId:', parsedSelectedCustomerUserId);
+
+        await dispatcherApi.createRide(pickupLocation, dropLocation, scheduledTime, true, parsedSelectedCustomerUserId);
       } else {
         await ridesApi.create(pickupLocation, dropLocation, scheduledTime, true);
       }
@@ -130,10 +125,10 @@ const CreateRidePage = () => {
     <AppLayout>
       <div className="max-w-2xl">
         <h1 className="text-xl font-semibold text-foreground mb-1">
-          {isDispatcher ? 'Inter City Ride' : 'Book a Ride'}
+          {isDispatcher ? 'Intra City Ride' : 'Book a Ride'}
         </h1>
         <p className="text-sm text-muted-foreground mb-6">
-          {isDispatcher ? 'Create an inter-city booking on behalf of a customer.' : 'Request a long-distance ride.'}
+          {isDispatcher ? 'Create an intra-city booking on behalf of a customer.' : 'Request a long-distance ride.'}
         </p>
 
         <form onSubmit={handleSubmit} className="space-y-5">
@@ -153,9 +148,9 @@ const CreateRidePage = () => {
               <div>
                 <Label className="text-foreground">Select Customer</Label>
                 <Select
-                  value={selectedCustomerId}
+                  value={selectedCustomerUserId}
                   onValueChange={value => {
-                    setSelectedCustomerId(value);
+                    setSelectedCustomerUserId(value);
                     setErrors(prev => {
                       const next = { ...prev };
                       delete next.customerId;
@@ -168,8 +163,8 @@ const CreateRidePage = () => {
                   </SelectTrigger>
                   <SelectContent>
                     {filteredCustomers.map(customer => (
-                      <SelectItem key={customer.id} value={String(customer.id)}>
-                        {customer.email}
+                      <SelectItem key={customer.id} value={String(customer.userId ?? customer.id)}>
+                        {`${customer.userId ?? customer.id} - ${customer.email}`}
                       </SelectItem>
                     ))}
                     {!customersLoading && filteredCustomers.length === 0 && (
@@ -201,11 +196,11 @@ const CreateRidePage = () => {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <Label className="text-foreground">Date</Label>
-              <Input type="date" value={form.scheduledDate} onChange={update('scheduledDate')} min={today} required className="mt-1" />
+              <Input type="date" value={form.scheduledDate} onChange={update('scheduledDate')} min={today} required className="mt-1 text-black dark:text-foreground [color-scheme:light] dark:[color-scheme:dark]" />
             </div>
             <div>
               <Label className="text-foreground">Time</Label>
-              <Input type="time" value={form.scheduledTime} onChange={update('scheduledTime')} min={isToday ? currentTime : undefined} required className="mt-1" />
+              <Input type="time" value={form.scheduledTime} onChange={update('scheduledTime')} min={isToday ? currentTime : undefined} required className="mt-1 text-black dark:text-foreground [color-scheme:light] dark:[color-scheme:dark]" />
             </div>
           </div>
           {errors.scheduledDate && <p className="text-xs text-destructive">{errors.scheduledDate}</p>}

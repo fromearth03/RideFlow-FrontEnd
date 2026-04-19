@@ -13,7 +13,7 @@ import { safeRecordBlockchainEvent } from '@/services/blockchainAudit';
 const configuredApiUrl = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.trim();
 const BASE_URL = (configuredApiUrl && configuredApiUrl.length > 0
   ? configuredApiUrl
-  : 'https://api.aliakbar.systems').replace(/\/$/, '');
+  : 'http://localhost:8080').replace(/\/$/, '');
 const USER_ID_BY_EMAIL_STORAGE_KEY = 'rideflow:userIdByEmail';
 
 function normalizeEmailKey(email: string): string {
@@ -372,6 +372,38 @@ function normalizeVehicles(payload: unknown): BackendVehicle[] {
   return list.map(normalizeVehicle).filter(vehicle => vehicle.id > 0);
 }
 
+function normalizeCustomer(payload: unknown): BackendCustomer {
+  const record = (payload ?? {}) as Record<string, unknown>;
+  const user = (record.user ?? {}) as Record<string, unknown>;
+
+  const parsedId = Number(record.id ?? 0);
+  const id = Number.isFinite(parsedId) && parsedId > 0 ? parsedId : 0;
+
+  const parsedUserId = Number(
+    record.userId ??
+    record.user_id ??
+    user.id ??
+    user.userId ??
+    user.user_id ??
+    record.customerId ??
+    record.customer_id ??
+    0,
+  );
+  const userId = Number.isFinite(parsedUserId) && parsedUserId > 0 ? parsedUserId : null;
+
+  return {
+    id,
+    userId,
+    email: String(record.email ?? user.email ?? ''),
+    phoneNumber: (record.phoneNumber ?? record.phone_number ?? null) as string | null,
+  };
+}
+
+function normalizeCustomers(payload: unknown): BackendCustomer[] {
+  const list = extractList<unknown>(payload, ['customers', 'data', 'content', 'items']);
+  return list.map(normalizeCustomer).filter(customer => customer.id > 0);
+}
+
 function toBooleanLike(value: unknown): boolean | undefined {
   if (typeof value === 'boolean') return value;
   if (typeof value === 'string') {
@@ -724,26 +756,66 @@ export const driversApi = {
 
 // ─── Dispatcher API ───────────────────────────────────────────────────────────
 export const dispatcherApi = {
+  getCustomers: async (): Promise<BackendCustomer[]> => {
+    const res = await fetch(`${BASE_URL}/customers`, { headers: getAuthHeaders() });
+    const data = await handleResponse<unknown>(res);
+    return normalizeCustomers(data);
+  },
+
+  getCustomerUserIdByEmail: async (email: string): Promise<number> => {
+    const normalizedEmail = email.trim();
+    if (!normalizedEmail) {
+      throw new Error('Customer email is required to resolve user id.');
+    }
+
+    const res = await fetch(
+      `${BASE_URL}/customers/user-id?email=${encodeURIComponent(normalizedEmail)}`,
+      { headers: getAuthHeaders() },
+    );
+    const data = await handleResponse<unknown>(res);
+
+    const userId = Number(
+      typeof data === 'number'
+        ? data
+        : (data as Record<string, unknown> | null)?.userId,
+    );
+
+    if (!Number.isFinite(userId) || userId <= 0) {
+      throw new Error('Could not resolve customer user id from email.');
+    }
+
+    return userId;
+  },
+
   createRide: async (
     pickupLocation: string,
     dropLocation: string,
     scheduledTime: string,
     inter_city: boolean,
-    customer?: { id?: number; email?: string },
+    customerUserId: number,
   ): Promise<BackendRide> => {
+    const normalizedCustomerUserId = toPositiveNumber(customerUserId);
+    if (!normalizedCustomerUserId) {
+      throw new Error('A valid customer user id is required for dispatcher ride creation.');
+    }
+
+    const requestPayload = {
+      pickupLocation,
+      dropLocation,
+      scheduledTime,
+      interCity: inter_city,
+      customerUserId: normalizedCustomerUserId,
+    };
+
+    console.log('[Dispatcher API createRide] payload', requestPayload);
+
     const res = await fetch(`${BASE_URL}/dispatcher/rides`, {
       method: 'POST',
       headers: getAuthHeaders(),
-      body: JSON.stringify({
-        pickupLocation,
-        dropLocation,
-        scheduledTime,
-        inter_city,
-        customerId: customer?.id,
-        customerEmail: customer?.email,
-      }),
+      body: JSON.stringify(requestPayload),
     });
     const ride = await handleResponse<BackendRide>(res);
+
     await safeRecordBlockchainEvent('RIDE_CREATE', {
       rideId: ride.id,
       pickupLocation,
@@ -751,8 +823,7 @@ export const dispatcherApi = {
       scheduledTime,
       inter_city,
       source: 'dispatcher',
-      customerId: customer?.id ?? null,
-      customerEmail: customer?.email ?? null,
+      customerId: normalizedCustomerUserId,
     });
     return ride;
   },

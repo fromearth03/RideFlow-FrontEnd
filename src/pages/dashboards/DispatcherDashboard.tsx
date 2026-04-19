@@ -74,9 +74,17 @@ export const DispatcherDashboard = () => {
   };
 
   const hasAssignedVehicle = (driver: BackendDriver): boolean => {
-    const statuses = driver.vehicleStatuses ?? [];
-    if (statuses.length === 0) return false;
-    return statuses.some(status => isOperableVehicleStatus(status));
+    const statuses = (driver.vehicleStatuses ?? [])
+      .map(status => (status ?? '').trim().toUpperCase())
+      .filter(status => status.length > 0);
+
+    if (statuses.length > 0) {
+      return statuses.some(status => isOperableVehicleStatus(status));
+    }
+
+    const hasVehicleIds = (driver.vehicleIds ?? []).length > 0;
+    const hasVehicleModels = (driver.vehicleModels ?? []).some(model => Boolean(model && model.trim().length > 0));
+    return hasVehicleIds || hasVehicleModels;
   };
 
   const isDriverEligibleForAssignment = (driver: BackendDriver): boolean => {
