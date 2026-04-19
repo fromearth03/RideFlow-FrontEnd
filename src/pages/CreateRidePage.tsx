@@ -4,7 +4,6 @@ import { AppLayout } from '@/components/AppLayout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Loader2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
@@ -29,7 +28,8 @@ const CreateRidePage = () => {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [customers, setCustomers] = useState<BackendCustomer[]>([]);
   const [customerSearch, setCustomerSearch] = useState('');
-  const [selectedCustomerUserId, setSelectedCustomerUserId] = useState<string>('');
+  const [selectedCustomerId, setSelectedCustomerId] = useState<string>('');
+  const [isCustomerSuggestionsOpen, setIsCustomerSuggestionsOpen] = useState(false);
   const [customersLoading, setCustomersLoading] = useState(false);
   const [fareEstimate, setFareEstimate] = useState<{ distanceKm: number; farePkr: number } | null>(null);
   const [fareLoading, setFareLoading] = useState(false);
@@ -94,7 +94,7 @@ const CreateRidePage = () => {
   const filteredCustomers = useMemo(() => {
     const keyword = customerSearch.trim().toLowerCase();
     if (!keyword) return customers;
-    return customers.filter(customer => customer.email.toLowerCase().includes(keyword));
+    return customers.filter(customer => customer.email.toLowerCase().startsWith(keyword));
   }, [customers, customerSearch]);
 
   const update = (field: string) => (e: React.ChangeEvent<HTMLInputElement>) =>
@@ -111,7 +111,7 @@ const CreateRidePage = () => {
       setErrors({ scheduledDate: 'Date and time are required.' });
       return;
     }
-    if (isDispatcher && !selectedCustomerUserId) {
+    if (isDispatcher && !selectedCustomerId) {
       setErrors({ customerId: 'Please choose a customer before creating a ride.' });
       return;
     }
@@ -121,21 +121,26 @@ const CreateRidePage = () => {
     setLoading(true);
     try {
       if (isDispatcher) {
-        const parsedSelectedCustomerUserId = Number(selectedCustomerUserId);
-        const selectedCustomer = customers.find(customer => (customer.userId ?? customer.id) === parsedSelectedCustomerUserId);
+        const parsedSelectedCustomerId = Number(selectedCustomerId);
+        const selectedCustomer = customers.find(customer => customer.id === parsedSelectedCustomerId);
         if (!selectedCustomer) {
           setErrors({ customerId: 'Selected customer is invalid. Please pick again.' });
           setLoading(false);
           return;
         }
 
-        if (user?.id && parsedSelectedCustomerUserId === user.id) {
+        let resolvedCustomerUserId = Number(selectedCustomer.userId ?? 0);
+        if (!Number.isFinite(resolvedCustomerUserId) || resolvedCustomerUserId <= 0) {
+          resolvedCustomerUserId = await dispatcherApi.getCustomerUserIdByEmail(selectedCustomer.email);
+        }
+
+        if (user?.id && resolvedCustomerUserId === user.id) {
           setErrors({ customerId: 'Invalid customer selection. Please choose a customer account.' });
           setLoading(false);
           return;
         }
 
-        console.log('[Dispatcher Submit] selectedCustomerUserId:', parsedSelectedCustomerUserId);
+        console.log('[Dispatcher Submit] selectedCustomerId:', parsedSelectedCustomerId, 'resolvedCustomerUserId:', resolvedCustomerUserId);
 
         let resolvedFare = fareEstimate?.farePkr ?? null;
         if (!resolvedFare) {
@@ -153,7 +158,7 @@ const CreateRidePage = () => {
           return;
         }
 
-        await dispatcherApi.createRide(pickupLocation, dropLocation, scheduledTime, true, parsedSelectedCustomerUserId, resolvedFare);
+        await dispatcherApi.createRide(pickupLocation, dropLocation, scheduledTime, true, resolvedCustomerUserId, resolvedFare);
       } else {
         await ridesApi.create(pickupLocation, dropLocation, scheduledTime, true);
       }
@@ -190,42 +195,66 @@ const CreateRidePage = () => {
             <div className="space-y-2 rounded-lg border bg-card p-4">
               <p className="text-sm font-medium text-foreground">Customer Selection</p>
               <p className="text-xs text-muted-foreground">Search by email and select the customer this booking belongs to.</p>
-              <div>
+              <div className="relative">
                 <Label className="text-foreground">Search Customer by Email</Label>
                 <Input
                   value={customerSearch}
-                  onChange={e => setCustomerSearch(e.target.value)}
+                  onChange={e => {
+                    const nextValue = e.target.value;
+                    setCustomerSearch(nextValue);
+                    setIsCustomerSuggestionsOpen(nextValue.trim().length > 0);
+                    setSelectedCustomerId('');
+                  }}
+                  onFocus={() => {
+                    if (customerSearch.trim().length > 0) {
+                      setIsCustomerSuggestionsOpen(true);
+                    }
+                  }}
+                  onBlur={() => {
+                    window.setTimeout(() => setIsCustomerSuggestionsOpen(false), 120);
+                  }}
                   placeholder="Type customer email"
                   className="mt-1"
                 />
+                {isCustomerSuggestionsOpen && (
+                  <div className="absolute z-20 mt-1 max-h-52 w-full overflow-auto rounded-md border border-border bg-popover shadow-lg">
+                    {customersLoading && <p className="px-3 py-2 text-xs text-muted-foreground">Loading customers...</p>}
+                    {!customersLoading && filteredCustomers.length === 0 && (
+                      <p className="px-3 py-2 text-xs text-muted-foreground">No customers match your search</p>
+                    )}
+                    {!customersLoading && filteredCustomers.map(customer => (
+                      <button
+                        key={customer.id}
+                        type="button"
+                        className="w-full border-b border-border px-3 py-2 text-left text-sm text-foreground last:border-b-0 hover:bg-accent"
+                        onMouseDown={event => {
+                          event.preventDefault();
+                          setSelectedCustomerId(String(customer.id));
+                          setCustomerSearch(customer.email);
+                          setIsCustomerSuggestionsOpen(false);
+                          setErrors(prev => {
+                            const next = { ...prev };
+                            delete next.customerId;
+                            return next;
+                          });
+                        }}
+                      >
+                        {`${customer.userId ?? customer.id} - ${customer.email}`}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
               <div>
                 <Label className="text-foreground">Select Customer</Label>
-                <Select
-                  value={selectedCustomerUserId}
-                  onValueChange={value => {
-                    setSelectedCustomerUserId(value);
-                    setErrors(prev => {
-                      const next = { ...prev };
-                      delete next.customerId;
-                      return next;
-                    });
-                  }}
-                >
-                  <SelectTrigger className="mt-1">
-                    <SelectValue placeholder={customersLoading ? 'Loading customers...' : 'Choose customer'} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {filteredCustomers.map(customer => (
-                      <SelectItem key={customer.id} value={String(customer.userId ?? customer.id)}>
-                        {`${customer.userId ?? customer.id} - ${customer.email}`}
-                      </SelectItem>
-                    ))}
-                    {!customersLoading && filteredCustomers.length === 0 && (
-                      <SelectItem value="none" disabled>No customers match your search</SelectItem>
-                    )}
-                  </SelectContent>
-                </Select>
+                <p className="mt-1 text-sm text-foreground">
+                  {selectedCustomerId
+                    ? (() => {
+                        const selected = customers.find(customer => customer.id === Number(selectedCustomerId));
+                        return selected ? `${selected.userId ?? selected.id} - ${selected.email}` : 'Choose customer';
+                      })()
+                    : 'Choose customer from search results above'}
+                </p>
                 {errors.customerId && <p className="text-xs text-destructive mt-1">{errors.customerId}</p>}
               </div>
             </div>

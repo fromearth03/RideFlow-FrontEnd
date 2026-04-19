@@ -31,6 +31,21 @@ export const UserDashboard = () => {
 
   const activeRides = rides.filter(r => ['PENDING', 'ASSIGNED', 'IN_PROGRESS'].includes(r.status));
   const completedRides = rides.filter(r => r.status === 'COMPLETED');
+  const recentRides = [...rides]
+    .sort((left, right) => {
+      const leftRide = left as BackendRide & { timestamp?: string; createdAt?: string; scheduledTime?: string };
+      const rightRide = right as BackendRide & { timestamp?: string; createdAt?: string; scheduledTime?: string };
+
+      const leftTime = new Date(leftRide.timestamp ?? leftRide.createdAt ?? leftRide.scheduledTime ?? 0).getTime();
+      const rightTime = new Date(rightRide.timestamp ?? rightRide.createdAt ?? rightRide.scheduledTime ?? 0).getTime();
+
+      if (leftTime !== rightTime) {
+        return rightTime - leftTime;
+      }
+
+      return right.id - left.id;
+    })
+    .slice(0, 5);
 
   if (loading) return (
     <div className="flex items-center justify-center py-20">
@@ -73,7 +88,7 @@ export const UserDashboard = () => {
               </tr>
             </thead>
             <tbody>
-              {rides.slice(0, 5).map(r => (
+              {recentRides.map(r => (
                 <tr key={r.id}>
                   <td className="text-muted-foreground font-mono text-xs">#{r.id}</td>
                   <td className="font-medium">{r.pickupLocation}</td>
@@ -86,7 +101,7 @@ export const UserDashboard = () => {
                   </td>
                 </tr>
               ))}
-              {rides.length === 0 && (
+              {recentRides.length === 0 && (
                 <tr><td colSpan={5} className="text-center text-muted-foreground py-6">No rides yet. <Link to="/rides/new" className="text-primary hover:underline">Book your first ride!</Link></td></tr>
               )}
             </tbody>
