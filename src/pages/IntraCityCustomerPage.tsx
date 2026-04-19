@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AppLayout } from '@/components/AppLayout';
 import { Button } from '@/components/ui/button';
@@ -8,6 +8,7 @@ import { Loader2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { ridesApi } from '@/services/api';
 import { LocationMapPicker } from '@/components/LocationMapPicker';
+import { estimateFareFromLocations } from '@/lib/fare';
 import type { ApiError } from '@/types';
 
 const IntraCityCustomerPage = () => {
@@ -22,6 +23,8 @@ const IntraCityCustomerPage = () => {
   });
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [fareEstimate, setFareEstimate] = useState<{ distanceKm: number; farePkr: number } | null>(null);
+  const [fareLoading, setFareLoading] = useState(false);
 
   const update = (field: string) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setForm(f => ({ ...f, [field]: e.target.value }));
@@ -29,6 +32,41 @@ const IntraCityCustomerPage = () => {
   const today = new Date().toISOString().split('T')[0];
   const isToday = form.scheduledDate === today;
   const currentTime = new Date().toTimeString().split(' ')[0].slice(0, 5);
+
+  useEffect(() => {
+    const pickup = form.pickup.trim();
+    const dropoff = form.dropoff.trim();
+
+    if (!pickup || !dropoff) {
+      setFareEstimate(null);
+      setFareLoading(false);
+      return;
+    }
+
+    let isCancelled = false;
+    const timer = window.setTimeout(async () => {
+      setFareLoading(true);
+      try {
+        const result = await estimateFareFromLocations(pickup, dropoff);
+        if (!isCancelled) {
+          setFareEstimate(result);
+        }
+      } catch {
+        if (!isCancelled) {
+          setFareEstimate(null);
+        }
+      } finally {
+        if (!isCancelled) {
+          setFareLoading(false);
+        }
+      }
+    }, 350);
+
+    return () => {
+      isCancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [form.pickup, form.dropoff]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -88,6 +126,19 @@ const IntraCityCustomerPage = () => {
             placeholder="Type drop-off location keywords"
             error={errors.dropLocation}
           />
+
+          <div className="rounded-lg border bg-card p-3">
+            <p className="text-sm font-medium text-foreground">Estimated Fare (PKR)</p>
+            {fareLoading && <p className="text-xs text-muted-foreground mt-1">Calculating distance and fare...</p>}
+            {!fareLoading && fareEstimate && (
+              <p className="text-sm text-foreground mt-1">
+                PKR {fareEstimate.farePkr.toLocaleString()} ({fareEstimate.distanceKm.toFixed(2)} km)
+              </p>
+            )}
+            {!fareLoading && !fareEstimate && (
+              <p className="text-xs text-muted-foreground mt-1">Enter pickup and drop-off to see fare.</p>
+            )}
+          </div>
 
           <div className="grid grid-cols-2 gap-4">
             <div>

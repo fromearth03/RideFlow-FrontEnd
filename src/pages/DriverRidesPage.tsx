@@ -18,6 +18,21 @@ const DriverRidesPage = () => {
   const [requestingRideId, setRequestingRideId] = useState<number | null>(null);
   const [assignedVehicles, setAssignedVehicles] = useState<BackendVehicle[]>([]);
 
+  const isVehicleOperable = (status: string | null | undefined): boolean => {
+    const normalized = (status ?? '').trim().toUpperCase();
+    if (!normalized) return true;
+
+    if (['INACTIVE', 'DISABLED', 'DISABLE', 'MAINTENANCE', 'OUT_OF_SERVICE', 'BLOCKED', 'SUSPENDED', 'FALSE', '0'].includes(normalized)) {
+      return false;
+    }
+
+    if (['ACTIVE', 'ENABLED', 'ENABLE', 'AVAILABLE', 'READY', 'OPERABLE', 'TRUE', '1'].includes(normalized)) {
+      return true;
+    }
+
+    return true;
+  };
+
   const loadData = useCallback(async () => {
     try {
       setLoading(true);
@@ -33,7 +48,7 @@ const DriverRidesPage = () => {
         const vehicles: BackendVehicle[] = Array.from({ length: itemCount }, (_, index) => {
           const vehicleId = dtoVehicleIds[index] ?? -(index + 1);
           const model = dtoVehicleModels[index]?.trim() ?? '';
-          const status = dtoVehicleStatuses[index]?.trim() ?? 'INACTIVE';
+          const status = dtoVehicleStatuses[index]?.trim() ?? 'ACTIVE';
 
           return {
             id: vehicleId,
@@ -61,10 +76,7 @@ const DriverRidesPage = () => {
   }, [loadData]);
 
   const hasAssignedVehicle = assignedVehicles.length > 0;
-  const hasOperableVehicle = assignedVehicles.some(vehicle => {
-    const normalized = (vehicle.status ?? '').trim().toUpperCase();
-    return normalized === 'ACTIVE';
-  });
+  const hasOperableVehicle = assignedVehicles.some(vehicle => isVehicleOperable(vehicle.status));
 
   const requestAssignment = async (rideId: number) => {
     if (!driverId) {

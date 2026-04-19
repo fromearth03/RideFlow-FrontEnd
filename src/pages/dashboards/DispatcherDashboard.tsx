@@ -51,8 +51,10 @@ export const DispatcherDashboard = () => {
 
   useEffect(() => { loadData(); }, [loadData]);
 
-  const inProgressDriverIds = new Set(
-    rides.filter(ride => ride.status === 'IN_PROGRESS' && ride.driverId !== null).map(ride => ride.driverId as number),
+  const busyDriverIds = new Set(
+    rides
+      .filter(ride => ['ASSIGNED', 'IN_PROGRESS'].includes(ride.status) && ride.driverId !== null)
+      .map(ride => ride.driverId as number),
   );
 
   const dispatchVisibleRides = rides.filter(ride => ride.status !== 'IN_PROGRESS');
@@ -70,7 +72,14 @@ export const DispatcherDashboard = () => {
 
   const isOperableVehicleStatus = (status: string | null | undefined): boolean => {
     const normalized = (status ?? '').trim().toUpperCase();
-    return normalized === 'ACTIVE';
+    if (!normalized) return true;
+    if (['INACTIVE', 'DISABLED', 'DISABLE', 'MAINTENANCE', 'OUT_OF_SERVICE', 'BLOCKED', 'SUSPENDED', 'FALSE', '0'].includes(normalized)) {
+      return false;
+    }
+    if (['ACTIVE', 'ENABLED', 'ENABLE', 'AVAILABLE', 'READY', 'OPERABLE', 'TRUE', '1'].includes(normalized)) {
+      return true;
+    }
+    return true;
   };
 
   const hasAssignedVehicle = (driver: BackendDriver): boolean => {
@@ -88,7 +97,7 @@ export const DispatcherDashboard = () => {
   };
 
   const isDriverEligibleForAssignment = (driver: BackendDriver): boolean => {
-    return driver.isAvailable && !inProgressDriverIds.has(driver.id) && hasAssignedVehicle(driver);
+    return driver.isAvailable && !busyDriverIds.has(driver.id) && hasAssignedVehicle(driver);
   };
 
   const availableDrivers = drivers.filter(isDriverEligibleForAssignment);
@@ -101,7 +110,7 @@ export const DispatcherDashboard = () => {
     if (!eligibleDriver) {
       toast({
         title: 'Assignment blocked',
-        description: 'Selected driver is not eligible. Driver must be available and have at least one ACTIVE assigned vehicle.',
+        description: 'Selected driver is not eligible. Driver must be available, not currently on another assigned/in-progress ride, and have at least one ACTIVE assigned vehicle.',
         variant: 'destructive',
       });
       return;
@@ -145,7 +154,7 @@ export const DispatcherDashboard = () => {
       if (!requestedAvailableDriver) {
         toast({
           title: 'Auto-assign failed',
-          description: 'Requested drivers are not eligible (must be available and have at least one ACTIVE vehicle).',
+          description: 'Requested drivers are not eligible (must be available, not currently on another assigned/in-progress ride, and have at least one ACTIVE vehicle).',
           variant: 'destructive',
         });
         return;
@@ -237,6 +246,7 @@ export const DispatcherDashboard = () => {
               <th>ID</th>
               <th>Pickup</th>
               <th>Drop-off</th>
+              <th>Fare (PKR)</th>
               <th>Status</th>
               <th>Driver</th>
               <th>Requests</th>
@@ -249,6 +259,7 @@ export const DispatcherDashboard = () => {
                 <td className="font-mono text-xs text-muted-foreground">#{ride.id}</td>
                 <td className="font-medium">{ride.pickupLocation}</td>
                 <td className="text-muted-foreground">{ride.dropLocation}</td>
+                <td className="text-muted-foreground">{ride.fare !== undefined && ride.fare !== null ? `PKR ${Number(ride.fare).toLocaleString()}` : '—'}</td>
                 <td>
                   <span className={`status-badge status-${ride.status.toLowerCase().replace('_', '-')}`}>
                     {ride.status}
@@ -300,7 +311,7 @@ export const DispatcherDashboard = () => {
               </tr>
             ))}
             {filtered.length === 0 && (
-              <tr><td colSpan={7} className="text-center text-muted-foreground py-6">No rides found.</td></tr>
+              <tr><td colSpan={8} className="text-center text-muted-foreground py-6">No rides found.</td></tr>
             )}
           </tbody>
         </table>

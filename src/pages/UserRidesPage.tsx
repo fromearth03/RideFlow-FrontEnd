@@ -72,6 +72,7 @@ const UserRidesPage = () => {
                   <th>ID</th>
                   <th>Pickup</th>
                   <th>Drop-off</th>
+                  <th>Fare (PKR)</th>
                   <th>Status</th>
                   <th>Driver</th>
                   <th>Actions</th>
@@ -83,6 +84,7 @@ const UserRidesPage = () => {
                     <td className="font-mono text-xs text-muted-foreground">#{r.id}</td>
                     <td className="font-medium">{r.pickupLocation}</td>
                     <td className="text-muted-foreground">{r.dropLocation}</td>
+                    <td className="text-muted-foreground">{r.fare !== undefined && r.fare !== null ? `PKR ${Number(r.fare).toLocaleString()}` : '—'}</td>
                     <td>
                       <span className={`status-badge status-${r.status.toLowerCase().replace('_', '-')}`}>
                         {r.status}
@@ -100,7 +102,7 @@ const UserRidesPage = () => {
                 ))}
                 {rides.length === 0 && (
                   <tr>
-                    <td colSpan={6} className="text-center text-muted-foreground py-6">
+                    <td colSpan={7} className="text-center text-muted-foreground py-6">
                       No rides yet.{' '}
                       <Link to="/rides/new" className="text-primary hover:underline">Book your first ride!</Link>
                     </td>

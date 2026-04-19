@@ -27,6 +27,7 @@ export interface BackendRide {
   status: RideStatus;
   driverId: number | null;
   inter_city?: boolean;
+  fare?: number | null;
 }
 
 export interface BackendDriver {

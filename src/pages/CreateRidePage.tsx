@@ -10,6 +10,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
 import { ridesApi, dispatcherApi } from '@/services/api';
 import { LocationMapPicker } from '@/components/LocationMapPicker';
+import { estimateFareFromLocations } from '@/lib/fare';
 import type { ApiError, BackendCustomer } from '@/types';
 
 const CreateRidePage = () => {
@@ -30,6 +31,8 @@ const CreateRidePage = () => {
   const [customerSearch, setCustomerSearch] = useState('');
   const [selectedCustomerUserId, setSelectedCustomerUserId] = useState<string>('');
   const [customersLoading, setCustomersLoading] = useState(false);
+  const [fareEstimate, setFareEstimate] = useState<{ distanceKm: number; farePkr: number } | null>(null);
+  const [fareLoading, setFareLoading] = useState(false);
 
   useEffect(() => {
     if (!isDispatcher) return;
@@ -52,6 +55,41 @@ const CreateRidePage = () => {
 
     loadCustomers();
   }, [isDispatcher, toast]);
+
+  useEffect(() => {
+    const pickup = form.pickup.trim();
+    const dropoff = form.dropoff.trim();
+
+    if (!pickup || !dropoff) {
+      setFareEstimate(null);
+      setFareLoading(false);
+      return;
+    }
+
+    let isCancelled = false;
+    const timer = window.setTimeout(async () => {
+      setFareLoading(true);
+      try {
+        const result = await estimateFareFromLocations(pickup, dropoff);
+        if (!isCancelled) {
+          setFareEstimate(result);
+        }
+      } catch {
+        if (!isCancelled) {
+          setFareEstimate(null);
+        }
+      } finally {
+        if (!isCancelled) {
+          setFareLoading(false);
+        }
+      }
+    }, 350);
+
+    return () => {
+      isCancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [form.pickup, form.dropoff]);
 
   const filteredCustomers = useMemo(() => {
     const keyword = customerSearch.trim().toLowerCase();
@@ -99,7 +137,23 @@ const CreateRidePage = () => {
 
         console.log('[Dispatcher Submit] selectedCustomerUserId:', parsedSelectedCustomerUserId);
 
-        await dispatcherApi.createRide(pickupLocation, dropLocation, scheduledTime, true, parsedSelectedCustomerUserId);
+        let resolvedFare = fareEstimate?.farePkr ?? null;
+        if (!resolvedFare) {
+          const recalculated = await estimateFareFromLocations(pickupLocation, dropLocation);
+          resolvedFare = recalculated?.farePkr ?? null;
+        }
+
+        if (!resolvedFare) {
+          toast({
+            title: 'Fare unavailable',
+            description: 'Could not calculate fare. Please refine pickup/drop-off and try again.',
+            variant: 'destructive',
+          });
+          setLoading(false);
+          return;
+        }
+
+        await dispatcherApi.createRide(pickupLocation, dropLocation, scheduledTime, true, parsedSelectedCustomerUserId, resolvedFare);
       } else {
         await ridesApi.create(pickupLocation, dropLocation, scheduledTime, true);
       }
@@ -192,6 +246,19 @@ const CreateRidePage = () => {
             placeholder="Type drop-off location keywords"
             error={errors.dropLocation}
           />
+
+          <div className="rounded-lg border bg-card p-3">
+            <p className="text-sm font-medium text-foreground">Estimated Fare (PKR)</p>
+            {fareLoading && <p className="text-xs text-muted-foreground mt-1">Calculating distance and fare...</p>}
+            {!fareLoading && fareEstimate && (
+              <p className="text-sm text-foreground mt-1">
+                PKR {fareEstimate.farePkr.toLocaleString()} ({fareEstimate.distanceKm.toFixed(2)} km)
+              </p>
+            )}
+            {!fareLoading && !fareEstimate && (
+              <p className="text-xs text-muted-foreground mt-1">Enter pickup and drop-off to see fare.</p>
+            )}
+          </div>
 
           <div className="grid grid-cols-2 gap-4">
             <div>

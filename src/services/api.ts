@@ -13,7 +13,7 @@ import { safeRecordBlockchainEvent } from '@/services/blockchainAudit';
 const configuredApiUrl = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.trim();
 const BASE_URL = (configuredApiUrl && configuredApiUrl.length > 0
   ? configuredApiUrl
-  : 'https://api.aliakbar.systems').replace(/\/$/, '');
+  : 'http://localhost:8080').replace(/\/$/, '');
 const USER_ID_BY_EMAIL_STORAGE_KEY = 'rideflow:userIdByEmail';
 
 function normalizeEmailKey(email: string): string {
@@ -793,10 +793,16 @@ export const dispatcherApi = {
     scheduledTime: string,
     inter_city: boolean,
     customerUserId: number,
+    fare: number,
   ): Promise<BackendRide> => {
     const normalizedCustomerUserId = toPositiveNumber(customerUserId);
     if (!normalizedCustomerUserId) {
       throw new Error('A valid customer user id is required for dispatcher ride creation.');
+    }
+
+    const normalizedFare = Number(fare);
+    if (!Number.isFinite(normalizedFare) || normalizedFare <= 0) {
+      throw new Error('A valid fare is required for dispatcher ride creation.');
     }
 
     const requestPayload = {
@@ -805,6 +811,7 @@ export const dispatcherApi = {
       scheduledTime,
       interCity: inter_city,
       customerUserId: normalizedCustomerUserId,
+      fare: Math.round(normalizedFare),
     };
 
     console.log('[Dispatcher API createRide] payload', requestPayload);

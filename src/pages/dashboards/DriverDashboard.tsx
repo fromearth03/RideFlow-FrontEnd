@@ -16,6 +16,21 @@ export const DriverDashboard = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
+  const isVehicleOperable = (status: string | null | undefined): boolean => {
+    const normalized = (status ?? '').trim().toUpperCase();
+    if (!normalized) return true;
+
+    if (['INACTIVE', 'DISABLED', 'DISABLE', 'MAINTENANCE', 'OUT_OF_SERVICE', 'BLOCKED', 'SUSPENDED', 'FALSE', '0'].includes(normalized)) {
+      return false;
+    }
+
+    if (['ACTIVE', 'ENABLED', 'ENABLE', 'AVAILABLE', 'READY', 'OPERABLE', 'TRUE', '1'].includes(normalized)) {
+      return true;
+    }
+
+    return true;
+  };
+
   const loadRides = useCallback(async () => {
     try {
       const [all, drivers] = await Promise.all([ridesApi.getAll(), driversApi.getAll()]);
@@ -32,7 +47,7 @@ export const DriverDashboard = () => {
         const vehicles: BackendVehicle[] = Array.from({ length: itemCount }, (_, index) => {
           const vehicleId = dtoVehicleIds[index] ?? -(index + 1);
           const model = dtoVehicleModels[index]?.trim() ?? '';
-          const status = dtoVehicleStatuses[index]?.trim() ?? 'INACTIVE';
+          const status = dtoVehicleStatuses[index]?.trim() ?? 'ACTIVE';
 
           return {
             id: vehicleId,
@@ -56,10 +71,7 @@ export const DriverDashboard = () => {
   useEffect(() => { loadRides(); }, [loadRides]);
 
   const hasAssignedVehicle = assignedVehicles.length > 0;
-  const hasOperableVehicle = assignedVehicles.some(vehicle => {
-    const normalized = (vehicle.status ?? '').trim().toUpperCase();
-    return normalized === 'ACTIVE';
-  });
+  const hasOperableVehicle = assignedVehicles.some(vehicle => isVehicleOperable(vehicle.status));
 
   const updateStatus = async (rideId: number, status: string) => {
     if (!hasAssignedVehicle && status === 'IN_PROGRESS') {
