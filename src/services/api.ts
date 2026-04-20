@@ -282,6 +282,44 @@ function normalizeDrivers(payload: unknown): BackendDriver[] {
   return list.map(normalizeDriver).filter(driver => driver.id > 0);
 }
 
+function normalizeRide(payload: unknown): BackendRide {
+  const record = (payload ?? {}) as Record<string, unknown>;
+
+  const interCityRaw = getNestedValue(record, ['interCity', 'inter_city']);
+  const interCity = typeof interCityRaw === 'boolean'
+    ? interCityRaw
+    : interCityRaw === undefined || interCityRaw === null
+      ? undefined
+      : String(interCityRaw).toLowerCase() === 'true';
+
+  const fareRaw = getNestedValue(record, ['fare']);
+  const parsedFare = Number(fareRaw);
+  const fare = Number.isFinite(parsedFare) ? parsedFare : null;
+
+  const scheduledTimeRaw = getNestedValue(record, ['scheduledTime', 'scheduled_time']);
+  const createdAtRaw = getNestedValue(record, ['createdAt', 'created_at']);
+  const updatedAtRaw = getNestedValue(record, ['updatedAt', 'updated_at']);
+
+  return {
+    id: Number(record.id ?? 0),
+    pickupLocation: String(record.pickupLocation ?? record.pickup_location ?? ''),
+    dropLocation: String(record.dropLocation ?? record.drop_location ?? ''),
+    status: String(record.status ?? 'PENDING') as BackendRide['status'],
+    driverId: extractEntityId(getNestedValue(record, ['driverId', 'driver_id', 'driver'])) ?? null,
+    inter_city: interCity,
+    interCity,
+    fare,
+    scheduledTime: typeof scheduledTimeRaw === 'string' ? scheduledTimeRaw : undefined,
+    createdAt: typeof createdAtRaw === 'string' ? createdAtRaw : undefined,
+    updatedAt: typeof updatedAtRaw === 'string' ? updatedAtRaw : undefined,
+  };
+}
+
+function normalizeRides(payload: unknown): BackendRide[] {
+  const list = extractList<unknown>(payload, ['rides', 'data', 'content', 'items']);
+  return list.map(normalizeRide).filter(ride => ride.id > 0);
+}
+
 function normalizeVehicle(payload: unknown): BackendVehicle {
   const record = (payload ?? {}) as Record<string, unknown>;
   const driverId =
@@ -646,27 +684,57 @@ export const authApi = {
 export const ridesApi = {
   getAll: async (): Promise<BackendRide[]> => {
     const res = await fetch(`${BASE_URL}/rides`, { headers: getAuthHeaders() });
-    return handleResponse<BackendRide[]>(res);
+    const data = await handleResponse<unknown>(res);
+    const normalized = normalizeRides(data);
+    if (normalized.length > 0) return normalized;
+    return extractList<BackendRide>(data, ['rides', 'data', 'content', 'items']);
   },
 
   getByUserId: async (userId: number): Promise<BackendRide[]> => {
     const res = await fetch(`${BASE_URL}/rides/user/${userId}`, { headers: getAuthHeaders() });
-    return handleResponse<BackendRide[]>(res);
+    const data = await handleResponse<unknown>(res);
+    const normalized = normalizeRides(data);
+    if (normalized.length > 0) return normalized;
+    return extractList<BackendRide>(data, ['rides', 'data', 'content', 'items']);
   },
 
-  create: async (pickupLocation: string, dropLocation: string, scheduledTime: string, inter_city?: boolean): Promise<BackendRide> => {
+  create: async (
+    pickupLocation: string,
+    dropLocation: string,
+    scheduledTime: string,
+    interCity: boolean,
+    fare: number,
+  ): Promise<BackendRide> => {
+    const normalizedFare = Number(fare);
+    if (!Number.isFinite(normalizedFare) || normalizedFare <= 0) {
+      throw new Error('A valid fare is required for ride creation.');
+    }
+
+    const requestPayload = {
+      pickupLocation,
+      dropLocation,
+      scheduledTime,
+      interCity,
+      fare: Math.round(normalizedFare),
+    };
+
+    console.log('[Customer API create] payload', requestPayload);
+
     const res = await fetch(`${BASE_URL}/rides`, {
       method: 'POST',
       headers: getAuthHeaders(),
-      body: JSON.stringify({ pickupLocation, dropLocation, scheduledTime, inter_city }),
+      body: JSON.stringify(requestPayload),
     });
-    const ride = await handleResponse<BackendRide>(res);
+    const data = await handleResponse<unknown>(res);
+    const ride = normalizeRide(data);
     await safeRecordBlockchainEvent('RIDE_CREATE', {
       rideId: ride.id,
       pickupLocation,
       dropLocation,
       scheduledTime,
-      inter_city: inter_city ?? null,
+      inter_city: interCity,
+      fare: Math.round(normalizedFare),
+      source: 'customer',
     });
     return ride;
   },
@@ -676,7 +744,8 @@ export const ridesApi = {
       method: 'POST',
       headers: getAuthHeaders(),
     });
-    const ride = await handleResponse<BackendRide>(res);
+    const data = await handleResponse<unknown>(res);
+    const ride = normalizeRide(data);
     await safeRecordBlockchainEvent('RIDE_ASSIGN_DRIVER', {
       rideId,
       driverId,
@@ -689,7 +758,8 @@ export const ridesApi = {
       method: 'PATCH',
       headers: getAuthHeaders(),
     });
-    const ride = await handleResponse<BackendRide>(res);
+    const data = await handleResponse<unknown>(res);
+    const ride = normalizeRide(data);
     const eventType = status === 'CANCELLED' ? 'RIDE_CANCEL' : 'RIDE_STATUS_UPDATE';
     await safeRecordBlockchainEvent(eventType, {
       rideId,
@@ -821,7 +891,8 @@ export const dispatcherApi = {
       headers: getAuthHeaders(),
       body: JSON.stringify(requestPayload),
     });
-    const ride = await handleResponse<BackendRide>(res);
+    const data = await handleResponse<unknown>(res);
+    const ride = normalizeRide(data);
 
     await safeRecordBlockchainEvent('RIDE_CREATE', {
       rideId: ride.id,
@@ -840,7 +911,8 @@ export const dispatcherApi = {
       method: 'POST',
       headers: getAuthHeaders(),
     });
-    const ride = await handleResponse<BackendRide>(res);
+    const data = await handleResponse<unknown>(res);
+    const ride = normalizeRide(data);
     await safeRecordBlockchainEvent('RIDE_ASSIGN_DRIVER', {
       rideId,
       driverId,
@@ -854,7 +926,8 @@ export const dispatcherApi = {
       method: 'POST',
       headers: getAuthHeaders(),
     });
-    return handleResponse<BackendRide>(res);
+    const data = await handleResponse<unknown>(res);
+    return normalizeRide(data);
   },
 };
 

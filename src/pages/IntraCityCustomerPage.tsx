@@ -81,7 +81,23 @@ const IntraCityCustomerPage = () => {
     const dropLocation = form.dropoff;
     setLoading(true);
     try {
-      await ridesApi.create(pickupLocation, dropLocation, scheduledTime, false);
+      let resolvedFare = fareEstimate?.farePkr ?? null;
+      if (!resolvedFare) {
+        const recalculated = await estimateFareFromLocations(pickupLocation, dropLocation);
+        resolvedFare = recalculated?.farePkr ?? null;
+      }
+
+      if (!resolvedFare) {
+        toast({
+          title: 'Fare unavailable',
+          description: 'Could not calculate fare. Please refine pickup/drop-off and try again.',
+          variant: 'destructive',
+        });
+        setLoading(false);
+        return;
+      }
+
+      await ridesApi.create(pickupLocation, dropLocation, scheduledTime, false, resolvedFare);
       toast({ title: 'Ride created', description: 'Your booking has been submitted successfully.' });
       navigate('/rides');
     } catch (err: unknown) {

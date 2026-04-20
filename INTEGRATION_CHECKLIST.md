@@ -233,7 +233,7 @@ export const UserDashboard = () => {
 **Features**:
 - [ ] Table of drivers
 - [ ] License number, availability status
-- [ ] Quick actions (assign, toggle, delete)
+- [ ] Quick actions (assign, toggle, delete)INACTIVE
 - [ ] Filter by availability
 
 #### 11. Vehicle Table Component

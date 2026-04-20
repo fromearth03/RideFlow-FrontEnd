@@ -120,6 +120,22 @@ const CreateRidePage = () => {
     const dropLocation = form.dropoff;
     setLoading(true);
     try {
+      let resolvedFare = fareEstimate?.farePkr ?? null;
+      if (!resolvedFare) {
+        const recalculated = await estimateFareFromLocations(pickupLocation, dropLocation);
+        resolvedFare = recalculated?.farePkr ?? null;
+      }
+
+      if (!resolvedFare) {
+        toast({
+          title: 'Fare unavailable',
+          description: 'Could not calculate fare. Please refine pickup/drop-off and try again.',
+          variant: 'destructive',
+        });
+        setLoading(false);
+        return;
+      }
+
       if (isDispatcher) {
         const parsedSelectedCustomerId = Number(selectedCustomerId);
         const selectedCustomer = customers.find(customer => customer.id === parsedSelectedCustomerId);
@@ -142,25 +158,9 @@ const CreateRidePage = () => {
 
         console.log('[Dispatcher Submit] selectedCustomerId:', parsedSelectedCustomerId, 'resolvedCustomerUserId:', resolvedCustomerUserId);
 
-        let resolvedFare = fareEstimate?.farePkr ?? null;
-        if (!resolvedFare) {
-          const recalculated = await estimateFareFromLocations(pickupLocation, dropLocation);
-          resolvedFare = recalculated?.farePkr ?? null;
-        }
-
-        if (!resolvedFare) {
-          toast({
-            title: 'Fare unavailable',
-            description: 'Could not calculate fare. Please refine pickup/drop-off and try again.',
-            variant: 'destructive',
-          });
-          setLoading(false);
-          return;
-        }
-
         await dispatcherApi.createRide(pickupLocation, dropLocation, scheduledTime, true, resolvedCustomerUserId, resolvedFare);
       } else {
-        await ridesApi.create(pickupLocation, dropLocation, scheduledTime, true);
+        await ridesApi.create(pickupLocation, dropLocation, scheduledTime, true, resolvedFare);
       }
       toast({ title: 'Ride created', description: 'Your booking has been submitted successfully.' });
       navigate(isDispatcher ? '/dashboard' : '/rides');
