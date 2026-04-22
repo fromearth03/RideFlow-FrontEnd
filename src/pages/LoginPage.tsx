@@ -24,7 +24,7 @@ const LoginPage = () => {
     if ((location.state as { pendingApproval?: boolean } | null)?.pendingApproval) {
       toast({
         title: 'Pending Approval',
-        description: 'You have not been approved. Contact the admin.',
+        description: 'You have not been approved. Contact the Admin.',
         variant: 'destructive',
       });
       navigate(location.pathname, { replace: true, state: null });
@@ -58,10 +58,10 @@ const LoginPage = () => {
       const apiErr = err as ApiError;
       if (apiErr?.errors) {
         setErrors(apiErr.errors);
-      } else if (apiErr?.message === 'You have not been approved. Contact the admin.') {
+      } else if (apiErr?.message === 'You have not been approved. Contact the Admin.') {
         toast({
           title: 'Pending Approval',
-          description: 'You have not been approved. Contact the admin.',
+          description: 'You have not been approved. Contact the Admin.',
           variant: 'destructive',
         });
       } else {

@@ -143,7 +143,6 @@ const AuthProviderInner: React.FC<{ children: React.ReactNode }> = ({ children }
     const data = await authApi.login(email, password);
     const approved = resolveApproval(data.role, data.approved);
     if (requiresApproval(data.role) && !approved) {
-      throw { message: 'You have not been approved. Contact the admin.' };
     }
     const fallbackUserId = data.userId ?? resolveCachedUserIdByEmail(email);
     persistAuth(email, data.token, data.role, approved, fallbackUserId);
