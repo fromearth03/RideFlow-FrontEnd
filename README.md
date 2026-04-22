@@ -9,9 +9,9 @@ The application is live at: [https://rideflow.aliakbar.systems/](https://rideflo
 
 | Role | Email | Password |
 |------|-------|----------|
-| **Admin** | `admin@test.com` | `password` |
-| **Dispatcher** | `dispatcher@test.com` | `password` |
-| **Customer** | `customer@test.com` | `password` |
+| **Admin** | `admin@test.com` | `123456` |
+| **Dispatcher** | `dispatcher@test.com` | `123456` |
+| **Customer** | `customer@test.com` | `123456` |
 
 > [!IMPORTANT]
 > **Admin Security Key:** `admin.secret=Ride_Flow_admin_Super123456`
